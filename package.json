@@ -1,0 +1,46 @@
+{
+  "name": "@unicitylabs/alphalite",
+  "version": "0.1.0",
+  "description": "Lightweight wallet and token management library for Unicity Protocol",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "prebuild": "rm -rf lib",
+    "build": "tsc",
+    "build:check": "tsc --noEmit",
+    "lint": "eslint \"src/**/*\" \"tests/**/*\"",
+    "lint:fix": "eslint \"src/**/*\" \"tests/**/*\" --fix",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=tests",
+    "test:single": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unicitynetwork/state-transition-sdk.git",
+    "directory": "alphalite"
+  },
+  "files": [
+    "lib/**/*",
+    "LICENSE",
+    "README.md"
+  ],
+  "author": "Unicity Labs",
+  "license": "ISC",
+  "dependencies": {
+    "@noble/ciphers": "1.2.1",
+    "@noble/hashes": "2.0.1",
+    "@unicitylabs/state-transition-sdk": "file:.."
+  },
+  "devDependencies": {
+    "@babel/preset-env": "7.28.5",
+    "@babel/preset-typescript": "7.28.5",
+    "@types/jest": "30.0.0",
+    "babel-jest": "30.2.0",
+    "jest": "30.2.0",
+    "ts-jest": "29.4.0",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@unicitylabs/state-transition-sdk": ">=1.6.0"
+  }
+}
