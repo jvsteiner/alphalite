@@ -11,7 +11,7 @@ Alphalite provides a simplified, high-level API on top of the [State Transition 
 ## Installation
 
 ```bash
-npm install @unicitylabs/alphalite
+npm install @jvsteiner/alphalite
 ```
 
 ## Quick Start
@@ -19,7 +19,7 @@ npm install @unicitylabs/alphalite
 ### Create a Wallet
 
 ```typescript
-import { Wallet, AlphaClient } from '@unicitylabs/alphalite';
+import { Wallet, AlphaClient } from '@jvsteiner/alphalite';
 
 // Create a new wallet with a default identity
 const wallet = await Wallet.create({ name: 'My Wallet' });
@@ -32,7 +32,7 @@ console.log('Address:', address);
 ### Mint a Token
 
 ```typescript
-import { Wallet, AlphaClient } from '@unicitylabs/alphalite';
+import { Wallet, AlphaClient } from '@jvsteiner/alphalite';
 
 const wallet = await Wallet.create();
 const client = new AlphaClient();
@@ -247,4 +247,4 @@ npm run lint
 
 ## License
 
-ISC
+MIT
