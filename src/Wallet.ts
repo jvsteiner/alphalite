@@ -2,15 +2,15 @@
  * Multi-identity wallet for managing keys and tokens.
  */
 
-import { AddressFactory } from '@unicitylabs/state-transition-sdk/lib/address/AddressFactory.js';
-import { HashAlgorithm } from '@unicitylabs/state-transition-sdk/lib/hash/HashAlgorithm.js';
-import { UnmaskedPredicateReference } from '@unicitylabs/state-transition-sdk/lib/predicate/embedded/UnmaskedPredicateReference.js';
-import { SigningService } from '@unicitylabs/state-transition-sdk/lib/sign/SigningService.js';
-import { Token } from '@unicitylabs/state-transition-sdk/lib/token/Token.js';
-import { TokenType } from '@unicitylabs/state-transition-sdk/lib/token/TokenType.js';
-import type { IMintTransactionReason } from '@unicitylabs/state-transition-sdk/lib/transaction/IMintTransactionReason.js';
+import { AddressFactory } from "@unicitylabs/state-transition-sdk/lib/address/AddressFactory.js";
+import { HashAlgorithm } from "@unicitylabs/state-transition-sdk/lib/hash/HashAlgorithm.js";
+import { UnmaskedPredicateReference } from "@unicitylabs/state-transition-sdk/lib/predicate/embedded/UnmaskedPredicateReference.js";
+import { SigningService } from "@unicitylabs/state-transition-sdk/lib/sign/SigningService.js";
+import { Token } from "@unicitylabs/state-transition-sdk/lib/token/Token.js";
+import { TokenType } from "@unicitylabs/state-transition-sdk/lib/token/TokenType.js";
+import type { IMintTransactionReason } from "@unicitylabs/state-transition-sdk/lib/transaction/IMintTransactionReason.js";
 
-import { SimpleToken } from './SimpleToken.js';
+import { SimpleToken } from "./SimpleToken.js";
 import {
   ICreateIdentityOptions,
   IIdentityJson,
@@ -19,22 +19,21 @@ import {
   IWalletExportOptions,
   IWalletImportOptions,
   IWalletJson,
-} from './types.js';
+} from "./types.js";
 import {
   bytesToHex,
   decrypt,
   deriveKey,
   encrypt,
   generateNonce,
-  generateRandom32,
   generateSalt,
   generateSecret,
   generateUuid,
   hexToBytes,
-} from './utils/crypto.js';
+} from "./utils/crypto.js";
 
 /** Current wallet format version */
-export const WALLET_VERSION = '1.0';
+export const WALLET_VERSION = "1.0";
 
 /** Default token type (can be overridden) */
 const DEFAULT_TOKEN_TYPE = new Uint8Array(32).fill(0x01);
@@ -55,7 +54,9 @@ export class Identity {
   /**
    * Create a new identity with a fresh key pair.
    */
-  public static async create(options: ICreateIdentityOptions = {}): Promise<Identity> {
+  public static async create(
+    options: ICreateIdentityOptions = {},
+  ): Promise<Identity> {
     const secret = options.secret ?? generateSecret();
     const nonce = generateNonce();
 
@@ -63,7 +64,7 @@ export class Identity {
 
     return new Identity(
       generateUuid(),
-      options.label ?? 'Default',
+      options.label ?? "Default",
       signingService.publicKey,
       secret,
       nonce,
@@ -144,18 +145,23 @@ export class Identity {
   /**
    * Deserialize from JSON.
    */
-  public static fromJSON(json: IIdentityJson, encryptionKey?: Uint8Array): Identity {
+  public static fromJSON(
+    json: IIdentityJson,
+    encryptionKey?: Uint8Array,
+  ): Identity {
     let secret: Uint8Array;
 
     if (json.encryptedSecret) {
       if (!encryptionKey) {
-        throw new Error('Encryption key required for encrypted identity');
+        throw new Error("Encryption key required for encrypted identity");
       }
       secret = decrypt(hexToBytes(json.encryptedSecret), encryptionKey);
     } else if (json.secret) {
       secret = hexToBytes(json.secret);
     } else {
-      throw new Error('Identity JSON must contain either secret or encryptedSecret');
+      throw new Error(
+        "Identity JSON must contain either secret or encryptedSecret",
+      );
     }
 
     return new Identity(
@@ -190,7 +196,12 @@ export class TokenEntry {
   }
 
   public static async fromJSON(json: ITokenEntryJson): Promise<TokenEntry> {
-    return new TokenEntry(json.identityId, await SimpleToken.fromJSON(json.token), json.label, new Date(json.addedAt));
+    return new TokenEntry(
+      json.identityId,
+      await SimpleToken.fromJSON(json.token),
+      json.label,
+      new Date(json.addedAt),
+    );
   }
 }
 
@@ -215,23 +226,25 @@ export class Wallet {
     public readonly defaultTokenType: Uint8Array,
     public readonly createdAt: Date,
   ) {
-    this.defaultIdentityId = '';
+    this.defaultIdentityId = "";
     this.modifiedAt = createdAt;
   }
 
   /**
    * Create a new wallet with a fresh identity.
    */
-  public static async create(options: IWalletCreateOptions = {}): Promise<Wallet> {
+  public static async create(
+    options: IWalletCreateOptions = {},
+  ): Promise<Wallet> {
     const wallet = new Wallet(
       generateUuid(),
-      options.name ?? 'My Wallet',
+      options.name ?? "My Wallet",
       options.defaultTokenType ?? DEFAULT_TOKEN_TYPE,
       new Date(),
     );
 
     const identity = await Identity.create({
-      label: options.identityLabel ?? 'Default',
+      label: options.identityLabel ?? "Default",
     });
 
     wallet.identities.set(identity.id, identity);
@@ -243,7 +256,10 @@ export class Wallet {
   /**
    * Import wallet from JSON.
    */
-  public static async fromJSON(json: IWalletJson, options: IWalletImportOptions = {}): Promise<Wallet> {
+  public static async fromJSON(
+    json: IWalletJson,
+    options: IWalletImportOptions = {},
+  ): Promise<Wallet> {
     if (json.version !== WALLET_VERSION) {
       throw new Error(`Unsupported wallet version: ${json.version}`);
     }
@@ -251,15 +267,20 @@ export class Wallet {
     let encryptionKey: Uint8Array | undefined;
     if (json.encrypted) {
       if (!options.password) {
-        throw new Error('Password required for encrypted wallet');
+        throw new Error("Password required for encrypted wallet");
       }
       if (!json.salt) {
-        throw new Error('Salt missing from encrypted wallet');
+        throw new Error("Salt missing from encrypted wallet");
       }
       encryptionKey = deriveKey(options.password, hexToBytes(json.salt));
     }
 
-    const wallet = new Wallet(json.id, json.name, hexToBytes(json.defaultTokenType), new Date(json.createdAt));
+    const wallet = new Wallet(
+      json.id,
+      json.name,
+      hexToBytes(json.defaultTokenType),
+      new Date(json.createdAt),
+    );
 
     wallet.modifiedAt = new Date(json.modifiedAt);
 
@@ -301,7 +322,8 @@ export class Wallet {
       }
     }
 
-    const tokens: ITokenEntryJson[] = options.includeTokens !== false ? this.tokens.map((t) => t.toJSON()) : [];
+    const tokens: ITokenEntryJson[] =
+      options.includeTokens !== false ? this.tokens.map((t) => t.toJSON()) : [];
 
     return {
       createdAt: this.createdAt.toISOString(),
@@ -323,7 +345,9 @@ export class Wallet {
   /**
    * Create a new identity in this wallet.
    */
-  public async createIdentity(options: ICreateIdentityOptions = {}): Promise<Identity> {
+  public async createIdentity(
+    options: ICreateIdentityOptions = {},
+  ): Promise<Identity> {
     const identity = await Identity.create(options);
     this.identities.set(identity.id, identity);
     this.touch();
@@ -364,7 +388,7 @@ export class Wallet {
   public getDefaultIdentity(): Identity {
     const identity = this.identities.get(this.defaultIdentityId);
     if (!identity) {
-      throw new Error('No default identity set');
+      throw new Error("No default identity set");
     }
     return identity;
   }
@@ -396,7 +420,7 @@ export class Wallet {
     }
 
     if (this.identities.size === 1) {
-      throw new Error('Cannot remove the last identity');
+      throw new Error("Cannot remove the last identity");
     }
 
     if (id === this.defaultIdentityId) {
@@ -418,7 +442,11 @@ export class Wallet {
   /**
    * Add a token to the wallet.
    */
-  public addToken(token: SimpleToken, identityId?: string, label?: string): void {
+  public addToken(
+    token: SimpleToken,
+    identityId?: string,
+    label?: string,
+  ): void {
     const id = identityId ?? this.defaultIdentityId;
     if (!this.identities.has(id)) {
       throw new Error(`Identity with ID ${id} not found`);
@@ -437,7 +465,9 @@ export class Wallet {
       throw new Error(`Identity with ID ${identityId} not found`);
     }
 
-    this.tokens.push(new TokenEntry(identityId, entry.token, entry.label, new Date()));
+    this.tokens.push(
+      new TokenEntry(identityId, entry.token, entry.label, new Date()),
+    );
     this.touch();
   }
 
@@ -485,7 +515,12 @@ export class Wallet {
     }
 
     const entry = this.tokens[index]!;
-    this.tokens[index] = new TokenEntry(entry.identityId, newToken, entry.label, entry.addedAt);
+    this.tokens[index] = new TokenEntry(
+      entry.identityId,
+      newToken,
+      entry.label,
+      entry.addedAt,
+    );
     this.touch();
   }
 
@@ -507,8 +542,12 @@ export class Wallet {
     for (const entry of other.tokens) {
       if (!existingTokenIds.has(entry.token.id)) {
         // Map to existing identity or keep original if it was merged
-        const identityId = this.identities.has(entry.identityId) ? entry.identityId : this.defaultIdentityId;
-        this.tokens.push(new TokenEntry(identityId, entry.token, entry.label, entry.addedAt));
+        const identityId = this.identities.has(entry.identityId)
+          ? entry.identityId
+          : this.defaultIdentityId;
+        this.tokens.push(
+          new TokenEntry(identityId, entry.token, entry.label, entry.addedAt),
+        );
       }
     }
 
@@ -528,12 +567,17 @@ export class Wallet {
   /**
    * Get the address for a specific identity with a specific token type.
    */
-  public async getAddress(identityId: string, tokenType?: Uint8Array): Promise<string> {
+  public async getAddress(
+    identityId: string,
+    tokenType?: Uint8Array,
+  ): Promise<string> {
     const identity = this.getIdentity(identityId);
     if (!identity) {
       throw new Error(`Identity with ID ${identityId} not found`);
     }
-    return identity.getAddress(new TokenType(tokenType ?? this.defaultTokenType));
+    return identity.getAddress(
+      new TokenType(tokenType ?? this.defaultTokenType),
+    );
   }
 
   /**
@@ -553,7 +597,9 @@ export class Wallet {
   /**
    * Get the underlying Token object for SDK operations.
    */
-  public getRawToken(tokenId: string): Token<IMintTransactionReason> | undefined {
+  public getRawToken(
+    tokenId: string,
+  ): Token<IMintTransactionReason> | undefined {
     const entry = this.getToken(tokenId);
     return entry?.token.raw;
   }

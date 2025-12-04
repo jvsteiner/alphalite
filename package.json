@@ -1,10 +1,16 @@
 {
-  "name": "@unicitylabs/alphalite",
+  "name": "@jvsteiner/alphalite",
   "version": "0.1.0",
   "description": "Lightweight wallet and token management library for Unicity Protocol",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
   "scripts": {
     "prebuild": "rm -rf lib",
     "build": "tsc",
@@ -12,12 +18,26 @@
     "lint": "eslint \"src/**/*\" \"tests/**/*\"",
     "lint:fix": "eslint \"src/**/*\" \"tests/**/*\" --fix",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=tests",
-    "test:single": "jest"
+    "test:single": "jest",
+    "prepublishOnly": "npm run build && npm test"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/unicitynetwork/state-transition-sdk.git",
-    "directory": "alphalite"
+    "url": "https://github.com/unicitynetwork/alphalite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unicitynetwork/alphalite/issues"
+  },
+  "homepage": "https://github.com/unicitynetwork/alphalite#readme",
+  "keywords": [
+    "unicity",
+    "wallet",
+    "token",
+    "blockchain",
+    "crypto"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "lib/**/*",
@@ -29,13 +49,16 @@
   "dependencies": {
     "@noble/ciphers": "1.2.1",
     "@noble/hashes": "2.0.1",
-    "@unicitylabs/state-transition-sdk": "^1.6.0"
+    "@unicitylabs/state-transition-sdk": ">=1.6.0"
   },
   "devDependencies": {
     "@babel/preset-env": "7.28.5",
     "@babel/preset-typescript": "7.28.5",
     "@types/jest": "30.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.1",
+    "@typescript-eslint/parser": "^8.48.1",
     "babel-jest": "30.2.0",
+    "eslint": "^9.39.1",
     "jest": "30.2.0",
     "ts-jest": "29.4.0",
     "typescript": "5.9.3"
