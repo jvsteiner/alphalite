@@ -204,7 +204,7 @@ wallet.removeToken(tokenId);
 
 ```typescript
 const client = new AlphaClient({
-  gatewayUrl: 'https://gateway-test.unicity.network:443',
+  gatewayUrl: 'https://goggregator-test.unicity.network',
   trustBase: RootTrustBase.fromJSON(trustBaseJson),
   apiKey: 'optional-api-key'
 });

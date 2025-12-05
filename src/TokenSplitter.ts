@@ -5,7 +5,6 @@
 import { SubmitCommitmentStatus } from "@unicitylabs/state-transition-sdk/lib/api/SubmitCommitmentResponse.js";
 import { RootTrustBase } from "@unicitylabs/state-transition-sdk/lib/bft/RootTrustBase.js";
 import { HashAlgorithm } from "@unicitylabs/state-transition-sdk/lib/hash/HashAlgorithm.js";
-import type { RequestId } from "@unicitylabs/state-transition-sdk/lib/api/RequestId.js";
 import { UnmaskedPredicate } from "@unicitylabs/state-transition-sdk/lib/predicate/embedded/UnmaskedPredicate.js";
 import { UnmaskedPredicateReference } from "@unicitylabs/state-transition-sdk/lib/predicate/embedded/UnmaskedPredicateReference.js";
 import { SigningService } from "@unicitylabs/state-transition-sdk/lib/sign/SigningService.js";
@@ -17,6 +16,9 @@ import { TokenId } from "@unicitylabs/state-transition-sdk/lib/token/TokenId.js"
 import { TokenState } from "@unicitylabs/state-transition-sdk/lib/token/TokenState.js";
 import type { IMintTransactionReason } from "@unicitylabs/state-transition-sdk/lib/transaction/IMintTransactionReason.js";
 import { TokenSplitBuilder } from "@unicitylabs/state-transition-sdk/lib/transaction/split/TokenSplitBuilder.js";
+import { waitInclusionProof } from "@unicitylabs/state-transition-sdk/lib/util/InclusionProofUtils.js";
+import type { MintCommitment } from "@unicitylabs/state-transition-sdk/lib/transaction/MintCommitment.js";
+import type { TransferCommitment } from "@unicitylabs/state-transition-sdk/lib/transaction/TransferCommitment.js";
 
 import { SimpleToken } from "./SimpleToken.js";
 import { bytesToHex, generateRandom32 } from "./utils/crypto.js";
@@ -171,9 +173,7 @@ export class TokenSplitter {
     }
 
     // Wait for burn inclusion proof
-    const burnProof = await this.waitForInclusionProof(
-      burnCommitment.requestId,
-    );
+    const burnProof = await this.waitForInclusionProof(burnCommitment);
     const burnTransaction = burnCommitment.toTransaction(burnProof);
 
     // Submit mint commitments
@@ -190,9 +190,7 @@ export class TokenSplitter {
         throw new Error(`Mint commitment failed: ${mintResponse.status}`);
       }
 
-      const mintProof = await this.waitForInclusionProof(
-        mintCommitment.requestId,
-      );
+      const mintProof = await this.waitForInclusionProof(mintCommitment);
       mintTransactions.push(mintCommitment.toTransaction(mintProof));
     }
 
@@ -298,9 +296,7 @@ export class TokenSplitter {
     }
 
     // Wait for burn inclusion proof
-    const burnProof = await this.waitForInclusionProof(
-      burnCommitment.requestId,
-    );
+    const burnProof = await this.waitForInclusionProof(burnCommitment);
     const burnTransaction = burnCommitment.toTransaction(burnProof);
 
     // Submit mint commitment
@@ -315,9 +311,7 @@ export class TokenSplitter {
       throw new Error(`Mint commitment failed: ${mintResponse.status}`);
     }
 
-    const mintProof = await this.waitForInclusionProof(
-      mintCommitment.requestId,
-    );
+    const mintProof = await this.waitForInclusionProof(mintCommitment);
     const mintTransaction = mintCommitment.toTransaction(mintProof);
 
     return {
@@ -331,28 +325,20 @@ export class TokenSplitter {
 
   // ============ Internal ============
 
-  private async waitForInclusionProof(requestId: RequestId) {
+  private async waitForInclusionProof(
+    commitment: MintCommitment<IMintTransactionReason> | TransferCommitment,
+  ) {
     const maxAttempts = 30;
     const delayMs = 1000;
+    const timeoutMs = maxAttempts * delayMs;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const response = await this.client.getInclusionProof(requestId);
-        return response.inclusionProof;
-      } catch {
-        if (attempt === maxAttempts - 1) {
-          throw new Error(
-            `Inclusion proof not found after ${maxAttempts} attempts`,
-          );
-        }
-        await this.delay(delayMs);
-      }
-    }
-
-    throw new Error("Inclusion proof polling exhausted");
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    // Use SDK's utility which verifies the proof against trustBase
+    return waitInclusionProof(
+      this.trustBase,
+      this.client,
+      commitment,
+      AbortSignal.timeout(timeoutMs),
+      delayMs,
+    );
   }
 }

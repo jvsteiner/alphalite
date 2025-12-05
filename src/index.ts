@@ -15,6 +15,9 @@ export {
   IRecipientPayload,
 } from "./TokenSplitter.js";
 
+// Trust base
+export { TEST_NETWORK_TRUST_BASE } from "./trustbase.js";
+
 // Types
 export {
   ICoinBalance,

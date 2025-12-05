@@ -294,7 +294,7 @@ import { AlphaClient, RootTrustBase } from '@jvsteiner/alphalite';
 
 // Create client
 const client = new AlphaClient({
-  gatewayUrl: 'https://gateway-test.unicity.network:443',  // Optional, this is default
+  gatewayUrl: 'https://goggregator-test.unicity.network',  // Optional, this is default
   apiKey: 'your-api-key'  // Optional
 });
 
@@ -345,9 +345,63 @@ const token = await client.mint(wallet, {
 | `identityId` | `string` | Identity to mint with |
 | `label` | `string` | Label for wallet storage |
 
-### Sending Tokens
+### Amount-Based Transfers (Recommended)
 
-Transfer a token to another address:
+The recommended way to send tokens is by amount. The wallet automatically selects tokens and splits them as needed:
+
+```typescript
+// Get recipient's public key (they provide this)
+const recipientPubKey = '03abc...';  // 33-byte compressed secp256k1 public key (hex)
+
+// Send an amount
+const result = await client.sendAmount(wallet, 'ALPHA', 500n, recipientPubKey);
+
+console.log(`Sent: ${result.sent}`);
+console.log(`Tokens used: ${result.tokensUsed}`);
+console.log(`Split performed: ${result.splitPerformed}`);
+
+// Send the payload to recipient (via secure channel)
+sendToRecipient(result.recipientPayload);
+```
+
+The recipient receives with:
+
+```typescript
+// Receive the payload from sender
+const tokens = await client.receiveAmount(wallet, recipientPayload);
+
+console.log(`Received ${tokens.length} token(s)`);
+for (const token of tokens) {
+  console.log(`  ${token.id}: ${token.getCoinBalance('ALPHA')} ALPHA`);
+}
+```
+
+**Send Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `identityId` | `string` | Identity to send from (uses default if omitted) |
+
+**Result:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sent` | `bigint` | Amount actually sent |
+| `recipientPayload` | `string` | JSON payload to send to recipient |
+| `tokensUsed` | `number` | Number of tokens consumed |
+| `splitPerformed` | `boolean` | Whether a token was split (change created) |
+
+**How token selection works:**
+
+1. **Exact match**: If a token has exactly the amount needed, use it (no split)
+2. **Consume small tokens**: Use up smaller tokens first (they can't be merged)
+3. **Split if needed**: Only split when necessary, preferring smaller sufficient tokens
+
+This minimizes token fragmentation since tokens cannot be joined once split.
+
+### Sending Tokens (Token-Based)
+
+For advanced use cases, you can send a specific token by ID:
 
 ```typescript
 // Get recipient's address (they provide this)
@@ -398,6 +452,93 @@ const status = await client.getTokenStatus(wallet, tokenId);
 console.log(`Spent: ${status.spent}`);
 console.log(`Transactions: ${status.transactionCount}`);
 ```
+
+---
+
+## Token Splitting
+
+### How It Works
+
+In the Unicity Protocol, tokens cannot be merged—once split, they remain separate forever. When you send an amount that doesn't match an exact token balance, the library performs a **split**:
+
+1. **Burn** the original token
+2. **Mint** a new token for the recipient (with the requested amount)
+3. **Mint** a change token for the sender (with the remaining balance)
+
+This is handled automatically by `sendAmount()`, but you can also use the `TokenSplitter` directly for advanced use cases:
+
+```typescript
+import { TokenSplitter } from '@jvsteiner/alphalite';
+
+const splitter = new TokenSplitter(client, trustBase);
+
+// Split a token: send 500 ALPHA to recipient, keep change
+const result = await splitter.split(
+  token.raw,           // SDK Token object
+  tokenSalt,           // Salt from wallet storage
+  signingService,      // From identity.getSigningService()
+  'ALPHA',             // Coin type
+  500n,                // Amount to send
+  recipientPublicKey   // Uint8Array, 33 bytes
+);
+
+// result.changeToken - SimpleToken with remaining balance
+// result.changeSalt - Salt for change token (save to wallet)
+// result.recipientPayload - Send to recipient
+
+// For exact transfers (full token balance, no change):
+const payload = await splitter.splitExact(
+  token.raw,
+  tokenSalt,
+  signingService,
+  'ALPHA',
+  recipientPublicKey
+);
+```
+
+### CoinManager
+
+The `CoinManager` handles token selection with a fragmentation-aware algorithm:
+
+```typescript
+import { CoinManager } from '@jvsteiner/alphalite';
+
+const coinManager = new CoinManager();
+
+// Get balance
+const balance = coinManager.getBalance(wallet, 'ALPHA');
+
+// Get all balances
+const balances = coinManager.getAllBalances(wallet);
+
+// Select tokens for an amount
+const selection = coinManager.selectTokensForAmount(wallet, 'ALPHA', 500n);
+
+console.log(`Tokens to use: ${selection.tokens.length}`);
+console.log(`Total amount: ${selection.totalAmount}`);
+console.log(`Needs split: ${selection.requiresSplit}`);
+if (selection.requiresSplit) {
+  console.log(`Split amount: ${selection.splitAmount}`);
+  console.log(`Change amount: ${selection.changeAmount}`);
+}
+```
+
+**Selection Strategy:**
+
+The algorithm minimizes fragmentation by:
+
+1. Looking for an exact match first (no new tokens created)
+2. Preferring to consume small tokens (they're "dead weight" since they can't be merged)
+3. Only splitting when necessary, choosing the smallest sufficient token
+
+Example with tokens `[10, 25, 50, 100, 500]` ALPHA:
+
+| Amount | Selection | Reason |
+|--------|-----------|--------|
+| 35 | Use 10 + 25 | Exact match, consumes 2 small tokens |
+| 50 | Use 50 | Exact match |
+| 80 | Use 10 + 25, split 50 for 45 | Consumes smalls, minimal change (5) |
+| 200 | Split 500 for 200 | Single split, keeps 300 |
 
 ---
 
@@ -569,6 +710,39 @@ interface ITokenStatus {
 interface ICoinBalance {
   name: string;
   amount: bigint;
+}
+
+interface ISendAmountOptions {
+  identityId?: string;
+}
+
+interface ISendAmountResult {
+  sent: bigint;
+  recipientPayload: string;
+  tokensUsed: number;
+  splitPerformed: boolean;
+}
+
+interface ITokenSelection {
+  tokens: TokenEntry[];
+  totalAmount: bigint;
+  requiresSplit: boolean;
+  splitAmount?: bigint;
+  changeAmount?: bigint;
+}
+
+interface ISplitResult {
+  changeToken: SimpleToken;
+  changeSalt: Uint8Array;
+  recipientPayload: IRecipientPayload;
+}
+
+interface IRecipientPayload {
+  type: 'split_mint';
+  mintTransactionJson: string;
+  salt: string;
+  amount: string;
+  coinType: string;
 }
 ```
 

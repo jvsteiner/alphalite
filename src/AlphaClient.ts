@@ -26,6 +26,7 @@ import { MintCommitment } from "@unicitylabs/state-transition-sdk/lib/transactio
 import { MintTransactionData } from "@unicitylabs/state-transition-sdk/lib/transaction/MintTransactionData.js";
 import { TransferCommitment } from "@unicitylabs/state-transition-sdk/lib/transaction/TransferCommitment.js";
 import { TransferTransaction } from "@unicitylabs/state-transition-sdk/lib/transaction/TransferTransaction.js";
+import { waitInclusionProof } from "@unicitylabs/state-transition-sdk/lib/util/InclusionProofUtils.js";
 
 import { CoinManager } from "./CoinManager.js";
 import { SimpleToken } from "./SimpleToken.js";
@@ -43,7 +44,7 @@ import {
 import { generateRandom32, hexToBytes } from "./utils/crypto.js";
 
 /** Default gateway URL */
-const DEFAULT_GATEWAY = "https://gateway-test.unicity.network:443";
+const DEFAULT_GATEWAY = "https://goggregator-test.unicity.network";
 
 /** Maximum attempts for polling inclusion proof */
 const MAX_INCLUSION_PROOF_ATTEMPTS = 30;
@@ -741,32 +742,22 @@ export class AlphaClient {
   private async waitForInclusionProof(
     commitment: MintCommitment<IMintTransactionReason> | TransferCommitment,
   ): Promise<InclusionProof> {
-    const requestId = commitment.requestId;
+    const trustBase = this.getTrustBase();
+    const timeoutMs = MAX_INCLUSION_PROOF_ATTEMPTS * INCLUSION_PROOF_POLL_DELAY;
 
-    for (let attempt = 0; attempt < MAX_INCLUSION_PROOF_ATTEMPTS; attempt++) {
-      try {
-        const response = await this.client.getInclusionProof(requestId);
-        return response.inclusionProof;
-      } catch {
-        if (attempt === MAX_INCLUSION_PROOF_ATTEMPTS - 1) {
-          throw new Error(
-            `Inclusion proof not found after ${MAX_INCLUSION_PROOF_ATTEMPTS} attempts`,
-          );
-        }
-        await this.delay(INCLUSION_PROOF_POLL_DELAY);
-      }
-    }
-
-    throw new Error("Inclusion proof polling exhausted");
+    // Use SDK's utility which verifies the proof against trustBase
+    return waitInclusionProof(
+      trustBase,
+      this.client,
+      commitment,
+      AbortSignal.timeout(timeoutMs),
+      INCLUSION_PROOF_POLL_DELAY,
+    );
   }
 
   private async hashData(data: Uint8Array): Promise<DataHash> {
     const hasher = new DataHasher(HashAlgorithm.SHA256);
     hasher.update(data);
     return hasher.digest();
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
