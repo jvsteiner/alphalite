@@ -30,7 +30,11 @@ import { waitInclusionProof } from "@unicitylabs/state-transition-sdk/lib/util/I
 
 import { CoinManager } from "./CoinManager.js";
 import { SimpleToken } from "./SimpleToken.js";
-import { TokenSplitter, IRecipientPayload } from "./TokenSplitter.js";
+import {
+  TokenSplitter,
+  IRecipientPayload,
+  OnTokenBurnedCallback,
+} from "./TokenSplitter.js";
 import { Wallet } from "./Wallet.js";
 import {
   IMintOptions,
@@ -382,8 +386,31 @@ export class AlphaClient {
     // Parse recipient public key
     const recipientPubKeyBytes = hexToBytes(recipientPublicKey);
 
-    // Create token splitter
-    const splitter = new TokenSplitter(this.client, trustBase);
+    // Create callback to handle wallet updates immediately after burn succeeds.
+    // This is CRITICAL for preventing stale tokens: if the burn succeeds but
+    // subsequent operations (minting) fail, the wallet must already have the
+    // burned token removed to stay in sync with the blockchain.
+    const createOnBurnedCallback = (
+      tokenId: string,
+      description: string,
+    ): OnTokenBurnedCallback => {
+      return async (burnedTokenId: string) => {
+        // Verify we're burning the expected token
+        if (burnedTokenId !== tokenId) {
+          throw new Error(
+            `Unexpected token burned: expected ${tokenId}, got ${burnedTokenId}`,
+          );
+        }
+        // Remove from wallet immediately
+        wallet.removeToken(tokenId);
+        // Notify so caller can persist
+        await this.notifyStateChange(wallet, {
+          type: "token_removed",
+          tokenIds: [tokenId],
+          description,
+        });
+      };
+    };
 
     // Handle based on selection
     if (selection.tokens.length === 1) {
@@ -392,6 +419,16 @@ export class AlphaClient {
 
       if (!selection.requiresSplit) {
         // Exact match - transfer full token via splitExact
+        // Create splitter with burn callback
+        const splitter = new TokenSplitter(
+          this.client,
+          trustBase,
+          createOnBurnedCallback(
+            tokenEntry.token.id,
+            `Sent ${amount} of coin ${coinId.slice(0, 8)}... (exact match)`,
+          ),
+        );
+
         const recipientPayload = await splitter.splitExact(
           token,
           tokenEntry.salt,
@@ -400,15 +437,7 @@ export class AlphaClient {
           recipientPubKeyBytes,
         );
 
-        // Remove the consumed token from wallet
-        wallet.removeToken(tokenEntry.token.id);
-
-        // Notify immediately after blockchain success so caller can persist
-        await this.notifyStateChange(wallet, {
-          type: "token_removed",
-          tokenIds: [tokenEntry.token.id],
-          description: `Sent ${amount} of coin ${coinId.slice(0, 8)}... (exact match)`,
-        });
+        // Token already removed in onBurned callback
 
         return {
           sent: amount,
@@ -418,6 +447,16 @@ export class AlphaClient {
         };
       } else {
         // Need to split - sends amount, keeps change
+        // Create splitter with burn callback
+        const splitter = new TokenSplitter(
+          this.client,
+          trustBase,
+          createOnBurnedCallback(
+            tokenEntry.token.id,
+            `Burned token for split: sending ${amount} of coin ${coinId.slice(0, 8)}...`,
+          ),
+        );
+
         const splitResult = await splitter.split(
           token,
           tokenEntry.salt,
@@ -427,8 +466,8 @@ export class AlphaClient {
           recipientPubKeyBytes,
         );
 
-        // Remove the original token and add the change token
-        wallet.removeToken(tokenEntry.token.id);
+        // Original token already removed in onBurned callback
+        // Now add the change token
         wallet.addToken(
           splitResult.changeToken,
           splitResult.changeSalt,
@@ -436,11 +475,11 @@ export class AlphaClient {
           tokenEntry.label ? `${tokenEntry.label} (change)` : undefined,
         );
 
-        // Notify immediately after blockchain success so caller can persist
+        // Notify about the change token being added
         await this.notifyStateChange(wallet, {
-          type: "token_replaced",
-          tokenIds: [tokenEntry.token.id, splitResult.changeToken.id],
-          description: `Split token: sent ${amount}, change ${splitResult.changeToken.getCoinBalance(coinId)}`,
+          type: "token_added",
+          tokenIds: [splitResult.changeToken.id],
+          description: `Split complete: change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
         });
 
         return {
@@ -470,6 +509,16 @@ export class AlphaClient {
       const token = tokenEntry.token.raw;
       const tokenBalance = tokenEntry.token.getCoinBalance(coinId);
 
+      // Create splitter with burn callback for this token
+      const splitter = new TokenSplitter(
+        this.client,
+        trustBase,
+        createOnBurnedCallback(
+          tokenEntry.token.id,
+          `Consumed token ${tokenEntry.token.id.slice(0, 8)}... (${tokenBalance} of ${coinId.slice(0, 8)}...)`,
+        ),
+      );
+
       const recipientPayload = await splitter.splitExact(
         token,
         tokenEntry.salt,
@@ -481,20 +530,22 @@ export class AlphaClient {
       payloads.push(recipientPayload);
       totalSent += tokenBalance;
 
-      // Remove the consumed token
-      wallet.removeToken(tokenEntry.token.id);
-
-      // Notify after each token is consumed so caller can persist incrementally
-      await this.notifyStateChange(wallet, {
-        type: "token_removed",
-        tokenIds: [tokenEntry.token.id],
-        description: `Consumed token ${tokenEntry.token.id.slice(0, 8)}... (${tokenBalance} of ${coinId.slice(0, 8)}...)`,
-      });
+      // Token already removed in onBurned callback
     }
 
     // Handle the last token
     if (selection.requiresSplit) {
       // Split the last token for the remaining amount
+      // Create splitter with burn callback
+      const splitter = new TokenSplitter(
+        this.client,
+        trustBase,
+        createOnBurnedCallback(
+          lastToken.token.id,
+          `Burned last token for split: sending ${selection.splitAmount} of coin ${coinId.slice(0, 8)}...`,
+        ),
+      );
+
       const splitResult = await splitter.split(
         lastToken.token.raw,
         lastToken.salt,
@@ -507,8 +558,8 @@ export class AlphaClient {
       payloads.push(splitResult.recipientPayload);
       totalSent += selection.splitAmount!;
 
-      // Remove original and add change
-      wallet.removeToken(lastToken.token.id);
+      // Original token already removed in onBurned callback
+      // Now add the change token
       wallet.addToken(
         splitResult.changeToken,
         splitResult.changeSalt,
@@ -516,15 +567,25 @@ export class AlphaClient {
         lastToken.label ? `${lastToken.label} (change)` : undefined,
       );
 
-      // Notify after split so caller can persist
+      // Notify about the change token being added
       await this.notifyStateChange(wallet, {
-        type: "token_replaced",
-        tokenIds: [lastToken.token.id, splitResult.changeToken.id],
-        description: `Split last token: sent ${selection.splitAmount}, change ${splitResult.changeToken.getCoinBalance(coinId)}`,
+        type: "token_added",
+        tokenIds: [splitResult.changeToken.id],
+        description: `Split complete: change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
       });
     } else {
       // Full transfer of last token
       const lastTokenBalance = lastToken.token.getCoinBalance(coinId);
+
+      // Create splitter with burn callback
+      const splitter = new TokenSplitter(
+        this.client,
+        trustBase,
+        createOnBurnedCallback(
+          lastToken.token.id,
+          `Consumed last token ${lastToken.token.id.slice(0, 8)}... (${lastTokenBalance} of ${coinId.slice(0, 8)}...)`,
+        ),
+      );
 
       const recipientPayload = await splitter.splitExact(
         lastToken.token.raw,
@@ -537,14 +598,7 @@ export class AlphaClient {
       payloads.push(recipientPayload);
       totalSent += lastTokenBalance;
 
-      wallet.removeToken(lastToken.token.id);
-
-      // Notify after removal so caller can persist
-      await this.notifyStateChange(wallet, {
-        type: "token_removed",
-        tokenIds: [lastToken.token.id],
-        description: `Consumed last token ${lastToken.token.id.slice(0, 8)}... (${lastTokenBalance} of ${coinId.slice(0, 8)}...)`,
-      });
+      // Token already removed in onBurned callback
     }
 
     // For multi-token transfers, wrap all payloads together

@@ -24,6 +24,17 @@ import { SimpleToken } from "./SimpleToken.js";
 import { bytesToHex, generateRandom32, hexToBytes } from "./utils/crypto.js";
 
 /**
+ * Callback invoked immediately after a token is burned on the blockchain
+ * but before minting new tokens. This is the critical save point to prevent
+ * stale tokens if subsequent operations fail.
+ *
+ * @param burnedTokenId The hex ID of the token that was just burned
+ */
+export type OnTokenBurnedCallback = (
+  burnedTokenId: string,
+) => void | Promise<void>;
+
+/**
  * Result of a split operation.
  */
 export interface ISplitResult {
@@ -70,6 +81,7 @@ export class TokenSplitter {
   public constructor(
     private readonly client: StateTransitionClient,
     private readonly trustBase: RootTrustBase,
+    private readonly onTokenBurned?: OnTokenBurnedCallback,
   ) {}
 
   /**
@@ -175,6 +187,14 @@ export class TokenSplitter {
     // Wait for burn inclusion proof
     const burnProof = await this.waitForInclusionProof(burnCommitment);
     const burnTransaction = burnCommitment.toTransaction(burnProof);
+
+    // CRITICAL SAVE POINT: Token is now burned on blockchain.
+    // Notify caller so they can persist wallet state immediately.
+    // If any subsequent operations fail, the wallet will be in a consistent
+    // state with the burned token already removed.
+    if (this.onTokenBurned) {
+      await this.onTokenBurned(bytesToHex(token.id.bytes));
+    }
 
     // Submit mint commitments
     const mintCommitments = await split.createSplitMintCommitments(
@@ -298,6 +318,14 @@ export class TokenSplitter {
     // Wait for burn inclusion proof
     const burnProof = await this.waitForInclusionProof(burnCommitment);
     const burnTransaction = burnCommitment.toTransaction(burnProof);
+
+    // CRITICAL SAVE POINT: Token is now burned on blockchain.
+    // Notify caller so they can persist wallet state immediately.
+    // If any subsequent operations fail, the wallet will be in a consistent
+    // state with the burned token already removed.
+    if (this.onTokenBurned) {
+      await this.onTokenBurned(bytesToHex(token.id.bytes));
+    }
 
     // Submit mint commitment
     const mintCommitments = await split.createSplitMintCommitments(

@@ -13,6 +13,7 @@ export {
   TokenSplitter,
   ISplitResult,
   IRecipientPayload,
+  OnTokenBurnedCallback,
 } from "./TokenSplitter.js";
 
 // Trust base
