@@ -138,6 +138,8 @@ export interface IWalletCreateOptions {
   readonly defaultTokenType?: Uint8Array;
   /** Initial identity label */
   readonly identityLabel?: string;
+  /** Import existing secret for the initial identity instead of generating a random one */
+  readonly identitySecret?: Uint8Array;
 }
 
 /**

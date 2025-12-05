@@ -248,6 +248,7 @@ export class Wallet {
 
     const identity = await Identity.create({
       label: options.identityLabel ?? "Default",
+      secret: options.identitySecret,
     });
 
     wallet.identities.set(identity.id, identity);
