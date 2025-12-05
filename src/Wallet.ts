@@ -449,6 +449,7 @@ export class Wallet {
    * @param salt The salt used for predicate derivation (required for spending)
    * @param identityId Identity that owns this token (defaults to default identity)
    * @param label Human-readable label for the token
+   * @throws Error if token with same ID already exists in wallet
    */
   public addToken(
     token: SimpleToken,
@@ -459,6 +460,13 @@ export class Wallet {
     const id = identityId ?? this.defaultIdentityId;
     if (!this.identities.has(id)) {
       throw new Error(`Identity with ID ${id} not found`);
+    }
+
+    // Check for duplicate token ID
+    if (this.tokens.some((e) => e.token.id === token.id)) {
+      throw new Error(
+        `Token with ID ${token.id} already exists in wallet. Duplicate tokens are not allowed.`,
+      );
     }
 
     this.tokens.push(new TokenEntry(id, token, salt, label, new Date()));

@@ -51,6 +51,7 @@ export class SimpleToken {
    * @param salt Salt provided by the sender (must match what was used in the split)
    * @param signingService Signing service for the recipient
    * @returns The received token
+   * @throws Error if the token was not meant for this recipient
    */
   public static async fromSplitMint(
     mintTransactionJson: string,
@@ -75,6 +76,19 @@ export class SimpleToken {
       HashAlgorithm.SHA256,
       salt,
     );
+
+    // SECURITY: Verify that the token was actually sent to us
+    // by checking that our predicate reference matches the recipient in the mint transaction
+    const predicateReference = await predicate.getReference();
+    const ourAddress = await predicateReference.toAddress();
+    const recipientAddress = mintTransaction.data.recipient;
+
+    if (ourAddress.toString() !== recipientAddress.toString()) {
+      throw new Error(
+        `Token was not sent to this wallet. Expected recipient: ${recipientAddress.toString()}, ` +
+          `but our address is: ${ourAddress.toString()}`,
+      );
+    }
 
     const tokenState = new TokenState(predicate, null);
 

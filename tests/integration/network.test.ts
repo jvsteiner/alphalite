@@ -320,6 +320,153 @@ describe("Integration: Network Operations", () => {
   });
 });
 
+describe("Integration: Token Security", () => {
+  let client: AlphaClient;
+
+  beforeAll(() => {
+    client = new AlphaClient({ apiKey: API_KEY });
+    client.setTrustBase(AlphaClient.loadTrustBase(TEST_NETWORK_TRUST_BASE));
+  });
+
+  describe("duplicate token prevention", () => {
+    it("should not accept the same token twice", async () => {
+      const wallet = await Wallet.create({ name: "Duplicate Test" });
+
+      // Mint a token
+      const token = await client.mint(wallet, {
+        coins: [[ALPHA, 100n]],
+      });
+
+      // Get the token entry including the salt
+      const tokenEntry = wallet.getToken(token.id);
+      expect(tokenEntry).toBeDefined();
+
+      // Wallet should have 100 ALPHA
+      expect(wallet.getBalance(ALPHA)).toBe(100n);
+
+      // Trying to add the same token again should fail
+      // BUG: Currently this will succeed and double the balance!
+      expect(() =>
+        wallet.addToken(token, tokenEntry!.salt, tokenEntry!.identityId),
+      ).toThrow(/already exists|duplicate/i);
+
+      // Balance should still be 100n, not 200n
+      expect(wallet.getBalance(ALPHA)).toBe(100n);
+      expect(wallet.listTokens()).toHaveLength(1);
+    });
+
+    it("should not accept a received token twice", async () => {
+      const senderWallet = await Wallet.create({ name: "Sender" });
+      const recipientWallet = await Wallet.create({ name: "Recipient" });
+
+      // Mint and send a token
+      await client.mint(senderWallet, { coins: [[ALPHA, 100n]] });
+      const recipientPubKey = bytesToHex(
+        recipientWallet.getDefaultIdentity().publicKey,
+      );
+      const result = await client.sendAmount(
+        senderWallet,
+        ALPHA,
+        100n,
+        recipientPubKey,
+      );
+
+      // First receive should work
+      const tokens = await client.receiveAmount(
+        recipientWallet,
+        result.recipientPayload,
+      );
+      expect(tokens.length).toBe(1);
+      expect(recipientWallet.getBalance(ALPHA)).toBe(100n);
+
+      // Second receive of the same payload should fail
+      // BUG: Currently this might succeed and double the balance!
+      await expect(
+        client.receiveAmount(recipientWallet, result.recipientPayload),
+      ).rejects.toThrow(/already exists|duplicate/i);
+
+      // Balance should still be 100n
+      expect(recipientWallet.getBalance(ALPHA)).toBe(100n);
+    });
+  });
+
+  describe("wrong wallet prevention", () => {
+    it("should not accept tokens meant for a different wallet", async () => {
+      const senderWallet = await Wallet.create({ name: "Sender" });
+      const intendedRecipient = await Wallet.create({
+        name: "Intended Recipient",
+      });
+      const attackerWallet = await Wallet.create({ name: "Attacker" });
+
+      // Mint a token
+      await client.mint(senderWallet, { coins: [[ALPHA, 100n]] });
+
+      // Send to the intended recipient
+      const recipientPubKey = bytesToHex(
+        intendedRecipient.getDefaultIdentity().publicKey,
+      );
+      const result = await client.sendAmount(
+        senderWallet,
+        ALPHA,
+        100n,
+        recipientPubKey,
+      );
+
+      // Attacker tries to receive the token meant for someone else
+      // BUG: This should fail but might succeed!
+      await expect(
+        client.receiveAmount(attackerWallet, result.recipientPayload),
+      ).rejects.toThrow();
+
+      // Attacker should have no tokens
+      expect(attackerWallet.getBalance(ALPHA)).toBe(0n);
+      expect(attackerWallet.listTokens()).toHaveLength(0);
+
+      // Intended recipient should still be able to receive
+      const tokens = await client.receiveAmount(
+        intendedRecipient,
+        result.recipientPayload,
+      );
+      expect(tokens.length).toBe(1);
+      expect(intendedRecipient.getBalance(ALPHA)).toBe(100n);
+    });
+
+    it("should not accept token-based transfer meant for different address", async () => {
+      const senderWallet = await Wallet.create({ name: "Sender" });
+      const intendedRecipient = await Wallet.create({
+        name: "Intended Recipient",
+      });
+      const attackerWallet = await Wallet.create({ name: "Attacker" });
+
+      // Mint a token
+      const token = await client.mint(senderWallet, {
+        coins: [[ALPHA, 100n]],
+      });
+
+      // Send to the intended recipient's address
+      const recipientAddress = await intendedRecipient.getDefaultAddress();
+      const sendResult = await client.send(
+        senderWallet,
+        token.id,
+        recipientAddress,
+      );
+
+      // Attacker intercepts and tries to receive
+      // BUG: This should fail but might succeed!
+      await expect(
+        client.receive(
+          attackerWallet,
+          sendResult.tokenJson,
+          sendResult.transactionJson,
+        ),
+      ).rejects.toThrow();
+
+      // Attacker should have no tokens
+      expect(attackerWallet.listTokens()).toHaveLength(0);
+    });
+  });
+});
+
 describe("Integration: onWalletStateChange callback", () => {
   let stateChanges: Array<{ wallet: Wallet; change: WalletStateChange }>;
   let client: AlphaClient;

@@ -1,4 +1,6 @@
-import { Identity, Wallet, WALLET_VERSION } from "../src/Wallet.js";
+import { Identity, TokenEntry, Wallet, WALLET_VERSION } from "../src/Wallet.js";
+import { SimpleToken } from "../src/SimpleToken.js";
+import { bytesToHex } from "../src/utils/crypto.js";
 
 describe("Wallet", () => {
   describe("creation", () => {
@@ -140,6 +142,61 @@ describe("Wallet", () => {
       // We can't add real tokens without SDK integration, but we can test the structure
       expect(wallet.listTokens()).toHaveLength(0);
       expect(wallet.listTokensForIdentity(second.id)).toHaveLength(0);
+    });
+
+    it("should reject duplicate token (same token ID added twice)", async () => {
+      const wallet = await Wallet.create();
+
+      // Create a mock token with a specific ID
+      const mockTokenId = "a".repeat(64);
+      const mockToken = {
+        id: mockTokenId,
+        coins: [{ coinId: "414c504841", amount: 100n }],
+        getCoinBalance: (coinId: string) =>
+          coinId === "414c504841" ? 100n : 0n,
+      } as unknown as SimpleToken;
+
+      const salt = new Uint8Array(32).fill(0x01);
+
+      // First add should succeed
+      wallet.addToken(mockToken, salt);
+      expect(wallet.listTokens()).toHaveLength(1);
+      expect(wallet.getBalance("414c504841")).toBe(100n);
+
+      // Second add of the same token should be rejected
+      // BUG: Currently this will succeed and double the balance!
+      expect(() => wallet.addToken(mockToken, salt)).toThrow(
+        /already exists|duplicate/i,
+      );
+
+      // Balance should still be 100n, not 200n
+      expect(wallet.getBalance("414c504841")).toBe(100n);
+      expect(wallet.listTokens()).toHaveLength(1);
+    });
+
+    it("should not allow balance inflation via duplicate token acceptance", async () => {
+      const wallet = await Wallet.create();
+
+      const mockTokenId = "b".repeat(64);
+      const mockToken = {
+        id: mockTokenId,
+        coins: [{ coinId: "414c504841", amount: 1000n }],
+        getCoinBalance: (coinId: string) =>
+          coinId === "414c504841" ? 1000n : 0n,
+      } as unknown as SimpleToken;
+
+      const salt = new Uint8Array(32).fill(0x02);
+
+      // Add the token
+      wallet.addToken(mockToken, salt);
+
+      // Try to add it again multiple times - all should fail
+      for (let i = 0; i < 5; i++) {
+        expect(() => wallet.addToken(mockToken, salt)).toThrow();
+      }
+
+      // Balance should be 1000n, not 6000n
+      expect(wallet.getBalance("414c504841")).toBe(1000n);
     });
   });
 

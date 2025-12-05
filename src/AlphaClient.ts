@@ -665,6 +665,19 @@ export class AlphaClient {
       salt,
     );
 
+    // SECURITY: Verify that the token was actually sent to us
+    // by checking that our predicate reference matches the recipient in the transaction
+    const predicateReference = await predicate.getReference();
+    const ourAddress = await predicateReference.toAddress();
+    const recipientAddress = transaction.data.recipient;
+
+    if (ourAddress.toString() !== recipientAddress.toString()) {
+      throw new Error(
+        `Token was not sent to this wallet. Expected recipient: ${recipientAddress.toString()}, ` +
+          `but our address is: ${ourAddress.toString()}`,
+      );
+    }
+
     // Finalize transaction
     const finalizedToken = await this.client.finalizeTransaction(
       trustBase,
