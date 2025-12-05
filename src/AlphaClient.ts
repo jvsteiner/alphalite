@@ -123,9 +123,10 @@ export class AlphaClient {
    * ```typescript
    * const token = await client.mint(wallet);
    *
-   * // With options
+   * // With options (coin ID is hex-encoded)
+   * const coinId = '414c504841'; // hex for 'ALPHA'
    * const token = await client.mint(wallet, {
-   *   coins: [['ALPHA', 1000n]],
+   *   coins: [[coinId, 1000n]],
    *   data: new TextEncoder().encode('My NFT'),
    *   label: 'My First Token'
    * });
@@ -291,13 +292,13 @@ export class AlphaClient {
   }
 
   /**
-   * Send an amount of a coin type to a recipient.
+   * Send an amount of a coin to a recipient.
    *
    * This is the recommended way to send tokens. The wallet automatically
    * selects tokens and performs splits as needed to fulfill the amount.
    *
    * @param wallet Wallet to send from
-   * @param coinType Coin type to send (e.g., 'ALPHA')
+   * @param coinId Hex-encoded coin ID
    * @param amount Amount to send
    * @param recipientPublicKey Recipient's public key (hex string, 33 bytes compressed secp256k1)
    * @param options Send options
@@ -305,14 +306,15 @@ export class AlphaClient {
    *
    * @example
    * ```typescript
-   * const result = await client.sendAmount(wallet, 'ALPHA', 500n, recipientPubKeyHex);
+   * const coinId = '414c504841'; // hex for 'ALPHA'
+   * const result = await client.sendAmount(wallet, coinId, 500n, recipientPubKeyHex);
    * // Send result.recipientPayload to recipient
    * // Recipient calls: await client.receiveAmount(wallet, result.recipientPayload);
    * ```
    */
   public async sendAmount(
     wallet: Wallet,
-    coinType: string,
+    coinId: string,
     amount: bigint,
     recipientPublicKey: string,
     options: ISendAmountOptions = {},
@@ -335,7 +337,7 @@ export class AlphaClient {
     // Select tokens using CoinManager's fragmentation-aware algorithm
     const selection = this.coinManager.selectTokensForAmount(
       wallet,
-      coinType,
+      coinId,
       amount,
       options.identityId,
     );
@@ -360,7 +362,7 @@ export class AlphaClient {
           token,
           tokenEntry.salt,
           signingService,
-          coinType,
+          coinId,
           recipientPubKeyBytes,
         );
 
@@ -379,7 +381,7 @@ export class AlphaClient {
           token,
           tokenEntry.salt,
           signingService,
-          coinType,
+          coinId,
           selection.splitAmount!,
           recipientPubKeyBytes,
         );
@@ -418,13 +420,13 @@ export class AlphaClient {
 
     for (const tokenEntry of tokensToConsume) {
       const token = tokenEntry.token.raw;
-      const tokenBalance = tokenEntry.token.getCoinBalance(coinType);
+      const tokenBalance = tokenEntry.token.getCoinBalance(coinId);
 
       const recipientPayload = await splitter.splitExact(
         token,
         tokenEntry.salt,
         signingService,
-        coinType,
+        coinId,
         recipientPubKeyBytes,
       );
 
@@ -442,7 +444,7 @@ export class AlphaClient {
         lastToken.token.raw,
         lastToken.salt,
         signingService,
-        coinType,
+        coinId,
         selection.splitAmount!,
         recipientPubKeyBytes,
       );
@@ -460,13 +462,13 @@ export class AlphaClient {
       );
     } else {
       // Full transfer of last token
-      const lastTokenBalance = lastToken.token.getCoinBalance(coinType);
+      const lastTokenBalance = lastToken.token.getCoinBalance(coinId);
 
       const recipientPayload = await splitter.splitExact(
         lastToken.token.raw,
         lastToken.salt,
         signingService,
-        coinType,
+        coinId,
         recipientPubKeyBytes,
       );
 
@@ -481,7 +483,7 @@ export class AlphaClient {
       type: "multi_split" as const,
       payloads,
       totalAmount: totalSent.toString(),
-      coinType,
+      coinId,
     };
 
     return {
@@ -730,11 +732,9 @@ export class AlphaClient {
       return null;
     }
 
-    const textEncoder = new TextEncoder();
-    const coinEntries: Array<[CoinId, bigint]> = coins.map(([name, amount]) => [
-      new CoinId(textEncoder.encode(name)),
-      amount,
-    ]);
+    const coinEntries: Array<[CoinId, bigint]> = coins.map(
+      ([hexCoinId, amount]) => [new CoinId(hexToBytes(hexCoinId)), amount],
+    );
 
     return TokenCoinData.create(coinEntries);
   }

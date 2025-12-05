@@ -5,21 +5,36 @@
 import { CoinManager } from "../src/CoinManager.js";
 import { SimpleToken } from "../src/SimpleToken.js";
 import { Wallet } from "../src/Wallet.js";
+import { bytesToHex } from "../src/utils/crypto.js";
+
+// Convert string to hex-encoded coin ID (for test convenience)
+function toHexCoinId(name: string): string {
+  return bytesToHex(new TextEncoder().encode(name));
+}
+
+// Common coin IDs used in tests
+const ALPHA = toHexCoinId("ALPHA");
+const BETA = toHexCoinId("BETA");
+const GAMMA = toHexCoinId("GAMMA");
 
 // Mock SimpleToken for testing
 function createMockToken(
   id: string,
   coins: Array<[string, bigint]>,
 ): SimpleToken {
+  // Convert string coin names to hex for the mock
+  const hexCoins = coins.map(
+    ([name, amount]) => [toHexCoinId(name), amount] as [string, bigint],
+  );
   return {
     id,
-    coins: coins.map(([name, amount]) => ({ name, amount })),
-    getCoinBalance: (coinType: string) => {
-      const coin = coins.find(([name]) => name === coinType);
+    coins: hexCoins.map(([coinId, amount]) => ({ coinId, amount })),
+    getCoinBalance: (coinId: string) => {
+      const coin = hexCoins.find(([id]) => id === coinId);
       return coin ? coin[1] : 0n;
     },
     raw: {} as unknown,
-    toJSON: () => JSON.stringify({ id, coins }),
+    toJSON: () => JSON.stringify({ id, coins: hexCoins }),
   } as unknown as SimpleToken;
 }
 
@@ -34,7 +49,7 @@ describe("CoinManager", () => {
 
   describe("getBalance", () => {
     it("should return 0 for empty wallet", () => {
-      const balance = coinManager.getBalance(wallet, "ALPHA");
+      const balance = coinManager.getBalance(wallet, ALPHA);
       expect(balance).toBe(0n);
     });
 
@@ -45,11 +60,11 @@ describe("CoinManager", () => {
       wallet.addToken(createMockToken("token1", [["ALPHA", 100n]]), salt1);
       wallet.addToken(createMockToken("token2", [["ALPHA", 250n]]), salt2);
 
-      const balance = coinManager.getBalance(wallet, "ALPHA");
+      const balance = coinManager.getBalance(wallet, ALPHA);
       expect(balance).toBe(350n);
     });
 
-    it("should only count specified coin type", () => {
+    it("should only count specified coin ID", () => {
       const salt = new Uint8Array(32).fill(1);
 
       wallet.addToken(
@@ -60,9 +75,9 @@ describe("CoinManager", () => {
         salt,
       );
 
-      expect(coinManager.getBalance(wallet, "ALPHA")).toBe(100n);
-      expect(coinManager.getBalance(wallet, "BETA")).toBe(500n);
-      expect(coinManager.getBalance(wallet, "GAMMA")).toBe(0n);
+      expect(coinManager.getBalance(wallet, ALPHA)).toBe(100n);
+      expect(coinManager.getBalance(wallet, BETA)).toBe(500n);
+      expect(coinManager.getBalance(wallet, GAMMA)).toBe(0n);
     });
   });
 
@@ -72,7 +87,7 @@ describe("CoinManager", () => {
       expect(balances.size).toBe(0);
     });
 
-    it("should aggregate all coin types", () => {
+    it("should aggregate all coin IDs", () => {
       const salt1 = new Uint8Array(32).fill(1);
       const salt2 = new Uint8Array(32).fill(2);
 
@@ -93,20 +108,20 @@ describe("CoinManager", () => {
 
       const balances = coinManager.getAllBalances(wallet);
 
-      expect(balances.get("ALPHA")).toBe(150n);
-      expect(balances.get("BETA")).toBe(200n);
-      expect(balances.get("GAMMA")).toBe(300n);
+      expect(balances.get(ALPHA)).toBe(150n);
+      expect(balances.get(BETA)).toBe(200n);
+      expect(balances.get(GAMMA)).toBe(300n);
     });
   });
 
   describe("selectTokensForAmount", () => {
     it("should throw for non-positive amount", () => {
       expect(() =>
-        coinManager.selectTokensForAmount(wallet, "ALPHA", 0n),
+        coinManager.selectTokensForAmount(wallet, ALPHA, 0n),
       ).toThrow("Amount must be positive");
 
       expect(() =>
-        coinManager.selectTokensForAmount(wallet, "ALPHA", -10n),
+        coinManager.selectTokensForAmount(wallet, ALPHA, -10n),
       ).toThrow("Amount must be positive");
     });
 
@@ -115,17 +130,17 @@ describe("CoinManager", () => {
       wallet.addToken(createMockToken("token1", [["ALPHA", 100n]]), salt);
 
       expect(() =>
-        coinManager.selectTokensForAmount(wallet, "ALPHA", 200n),
-      ).toThrow("Insufficient ALPHA balance: have 100, need 200");
+        coinManager.selectTokensForAmount(wallet, ALPHA, 200n),
+      ).toThrow(/Insufficient balance.*have 100, need 200/);
     });
 
-    it("should throw when no tokens have the coin type", () => {
+    it("should throw when no tokens have the coin ID", () => {
       const salt = new Uint8Array(32).fill(1);
       wallet.addToken(createMockToken("token1", [["BETA", 100n]]), salt);
 
       expect(() =>
-        coinManager.selectTokensForAmount(wallet, "ALPHA", 50n),
-      ).toThrow("No tokens with ALPHA balance");
+        coinManager.selectTokensForAmount(wallet, ALPHA, 50n),
+      ).toThrow(/No tokens with coin ID/);
     });
 
     describe("exact match selection", () => {
@@ -140,7 +155,7 @@ describe("CoinManager", () => {
 
         const selection = coinManager.selectTokensForAmount(
           wallet,
-          "ALPHA",
+          ALPHA,
           100n,
         );
 
@@ -162,7 +177,7 @@ describe("CoinManager", () => {
 
         const selection = coinManager.selectTokensForAmount(
           wallet,
-          "ALPHA",
+          ALPHA,
           100n,
         );
 
@@ -185,7 +200,7 @@ describe("CoinManager", () => {
         // 50 is too small, so we use 50 + split of 150 for remaining 50
         const selection = coinManager.selectTokensForAmount(
           wallet,
-          "ALPHA",
+          ALPHA,
           100n,
         );
 
@@ -206,11 +221,7 @@ describe("CoinManager", () => {
         wallet.addToken(createMockToken("token2", [["ALPHA", 25n]]), salt2);
 
         // Request exact sum of both tokens
-        const selection = coinManager.selectTokensForAmount(
-          wallet,
-          "ALPHA",
-          35n,
-        );
+        const selection = coinManager.selectTokensForAmount(wallet, ALPHA, 35n);
 
         expect(selection.tokens.length).toBe(2);
         expect(selection.requiresSplit).toBe(false);
@@ -227,11 +238,7 @@ describe("CoinManager", () => {
         wallet.addToken(createMockToken("token3", [["ALPHA", 100n]]), salt3);
 
         // 10 + 25 = 35, need 45 more from 100-token
-        const selection = coinManager.selectTokensForAmount(
-          wallet,
-          "ALPHA",
-          80n,
-        );
+        const selection = coinManager.selectTokensForAmount(wallet, ALPHA, 80n);
 
         expect(selection.tokens.length).toBe(3);
         expect(selection.requiresSplit).toBe(true);
@@ -249,11 +256,7 @@ describe("CoinManager", () => {
         wallet.addToken(createMockToken("token3", [["ALPHA", 100n]]), salt3);
 
         // 10 + 25 = 35 exactly - should prefer this over splitting 100
-        const selection = coinManager.selectTokensForAmount(
-          wallet,
-          "ALPHA",
-          35n,
-        );
+        const selection = coinManager.selectTokensForAmount(wallet, ALPHA, 35n);
 
         expect(selection.tokens.length).toBe(2);
         expect(selection.requiresSplit).toBe(false);
@@ -279,7 +282,7 @@ describe("CoinManager", () => {
         // Send 35: should use 10 + 25 = 35 exactly (no split, no new tokens)
         const selection35 = coinManager.selectTokensForAmount(
           wallet,
-          "ALPHA",
+          ALPHA,
           35n,
         );
         expect(selection35.requiresSplit).toBe(false);
@@ -287,7 +290,7 @@ describe("CoinManager", () => {
         // Send 50: exact match exists
         const selection50 = coinManager.selectTokensForAmount(
           wallet,
-          "ALPHA",
+          ALPHA,
           50n,
         );
         expect(selection50.tokens.length).toBe(1);

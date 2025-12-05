@@ -76,7 +76,7 @@ export interface IMintOptions {
   readonly tokenType?: Uint8Array;
   /** Token data payload */
   readonly data?: Uint8Array;
-  /** Coin balances as [coinName, amount] pairs */
+  /** Coin balances as [hexCoinId, amount] pairs. Coin ID is hex-encoded bytes. */
   readonly coins?: ReadonlyArray<readonly [string, bigint]>;
   /** Identity ID to mint with - uses default if not provided */
   readonly identityId?: string;
@@ -164,7 +164,8 @@ export interface IWalletExportOptions {
  * Simplified coin balance representation.
  */
 export interface ICoinBalance {
-  readonly name: string;
+  /** Hex-encoded coin ID */
+  readonly coinId: string;
   readonly amount: bigint;
 }
 

@@ -165,6 +165,7 @@ export class SimpleToken {
 
   /**
    * Get coin balances as a simple array.
+   * Coin IDs are returned as hex-encoded strings.
    */
   public get coins(): ICoinBalance[] {
     if (!this.token.coins) {
@@ -175,7 +176,7 @@ export class SimpleToken {
     for (const [coinId, amount] of this.token.coins.coins) {
       result.push({
         amount,
-        name: this.decodeCoinName(coinId.bytes),
+        coinId: bytesToHex(coinId.bytes),
       });
     }
 
@@ -184,6 +185,7 @@ export class SimpleToken {
 
   /**
    * Get coin balances as a Map.
+   * Keys are hex-encoded coin IDs.
    */
   public get coinMap(): Map<string, bigint> {
     const map = new Map<string, bigint>();
@@ -193,7 +195,7 @@ export class SimpleToken {
     }
 
     for (const [coinId, amount] of this.token.coins.coins) {
-      map.set(this.decodeCoinName(coinId.bytes), amount);
+      map.set(bytesToHex(coinId.bytes), amount);
     }
 
     return map;
@@ -201,9 +203,10 @@ export class SimpleToken {
 
   /**
    * Get the balance of a specific coin type.
+   * @param coinId Hex-encoded coin ID
    */
-  public getCoinBalance(coinName: string): bigint {
-    return this.coinMap.get(coinName) ?? 0n;
+  public getCoinBalance(coinId: string): bigint {
+    return this.coinMap.get(coinId) ?? 0n;
   }
 
   /**
@@ -241,7 +244,7 @@ export class SimpleToken {
 
     if (this.hasCoins) {
       const coinSummary = this.coins
-        .map((c) => `${c.name}:${c.amount}`)
+        .map((c) => `${c.coinId.slice(0, 8)}...:${c.amount}`)
         .join(",");
       parts.push(`coins={${coinSummary}}`);
     }
@@ -267,15 +270,5 @@ export class SimpleToken {
    */
   public get rawCoins(): TokenCoinData | null {
     return this.token.coins;
-  }
-
-  // ============ Internal ============
-
-  private decodeCoinName(bytes: Uint8Array): string {
-    try {
-      return new TextDecoder().decode(bytes);
-    } catch {
-      return bytesToHex(bytes);
-    }
   }
 }

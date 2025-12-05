@@ -53,14 +53,17 @@ const client = new AlphaClient({ gatewayUrl: 'https://gateway-test.unicity.netwo
 const trustBase = RootTrustBase.fromJSON(trustBaseJson); // Load from config
 client.setTrustBase(trustBase);
 
-// Mint a token
+// Mint a token (coin IDs are hex-encoded)
+// Example: "ALPHA" as UTF-8 bytes = 0x414c504841
+const ALPHA = '414c504841';
+
 const token = await client.mint(wallet, {
-  coins: [['ALPHA', 1000n]],
+  coins: [[ALPHA, 1000n]],
   label: 'My First Token'
 });
 
 console.log(`Minted token: ${token.id}`);
-console.log(`Balance: ${token.getCoinBalance('ALPHA')}`);
+console.log(`Balance: ${token.getCoinBalance(ALPHA)}`);
 ```
 
 ---
@@ -79,7 +82,7 @@ This starts a Node.js REPL with all Alphalite exports available as globals:
 > const wallet = await Wallet.create({ name: 'Test' })
 > wallet.name
 'Test'
-> wallet.getBalance('ALPHA')
+> wallet.getBalance('414c504841')  // hex-encoded coin ID
 0n
 > await wallet.getDefaultAddress()
 'DIRECT://...'
@@ -188,23 +191,26 @@ try {
 Check coin balances across all tokens in the wallet:
 
 ```typescript
-// Get balance for a specific coin type
-const alphaBalance = wallet.getBalance('ALPHA');
+// Coin IDs are hex-encoded (e.g., "ALPHA" = 0x414c504841)
+const ALPHA = '414c504841';
+
+// Get balance for a specific coin ID
+const alphaBalance = wallet.getBalance(ALPHA);
 console.log(`ALPHA balance: ${alphaBalance}`);  // e.g., 1500n
 
 // Get all balances
 const balances = wallet.getBalances();
-for (const [coinType, amount] of balances) {
-  console.log(`${coinType}: ${amount}`);
+for (const [coinId, amount] of balances) {
+  console.log(`${coinId}: ${amount}`);
 }
 
 // Check if wallet can afford an amount
-if (wallet.canAfford('ALPHA', 500n)) {
+if (wallet.canAfford(ALPHA, 500n)) {
   console.log('Sufficient balance');
 }
 
 // Filter by identity
-const identityBalance = wallet.getBalance('ALPHA', identityId);
+const identityBalance = wallet.getBalance(ALPHA, identityId);
 ```
 
 ---
@@ -312,11 +318,14 @@ Create new tokens on the network:
 // Basic mint
 const token = await client.mint(wallet);
 
-// Mint with coin balances
+// Mint with coin balances (coin IDs are hex-encoded)
+const ALPHA = '414c504841';  // "ALPHA" as hex
+const BETA = '42455441';     // "BETA" as hex
+
 const token = await client.mint(wallet, {
   coins: [
-    ['ALPHA', 1000n],
-    ['BETA', 500n]
+    [ALPHA, 1000n],
+    [BETA, 500n]
   ]
 });
 
@@ -341,7 +350,7 @@ const token = await client.mint(wallet, {
 | `tokenId` | `Uint8Array` | Custom 32-byte token ID |
 | `tokenType` | `Uint8Array` | Custom 32-byte token type |
 | `data` | `Uint8Array` | Arbitrary data payload |
-| `coins` | `[string, bigint][]` | Coin balances as name/amount pairs |
+| `coins` | `[string, bigint][]` | Coin balances as hex-encoded ID/amount pairs |
 | `identityId` | `string` | Identity to mint with |
 | `label` | `string` | Label for wallet storage |
 
@@ -350,11 +359,14 @@ const token = await client.mint(wallet, {
 The recommended way to send tokens is by amount. The wallet automatically selects tokens and splits them as needed:
 
 ```typescript
+// Coin IDs are hex-encoded
+const ALPHA = '414c504841';
+
 // Get recipient's public key (they provide this)
 const recipientPubKey = '03abc...';  // 33-byte compressed secp256k1 public key (hex)
 
 // Send an amount
-const result = await client.sendAmount(wallet, 'ALPHA', 500n, recipientPubKey);
+const result = await client.sendAmount(wallet, ALPHA, 500n, recipientPubKey);
 
 console.log(`Sent: ${result.sent}`);
 console.log(`Tokens used: ${result.tokensUsed}`);
@@ -367,12 +379,14 @@ sendToRecipient(result.recipientPayload);
 The recipient receives with:
 
 ```typescript
+const ALPHA = '414c504841';
+
 // Receive the payload from sender
 const tokens = await client.receiveAmount(wallet, recipientPayload);
 
 console.log(`Received ${tokens.length} token(s)`);
 for (const token of tokens) {
-  console.log(`  ${token.id}: ${token.getCoinBalance('ALPHA')} ALPHA`);
+  console.log(`  ${token.id}: ${token.getCoinBalance(ALPHA)} ALPHA`);
 }
 ```
 
@@ -472,12 +486,15 @@ import { TokenSplitter } from '@jvsteiner/alphalite';
 
 const splitter = new TokenSplitter(client, trustBase);
 
+// Coin IDs are hex-encoded
+const ALPHA = '414c504841';
+
 // Split a token: send 500 ALPHA to recipient, keep change
 const result = await splitter.split(
   token.raw,           // SDK Token object
   tokenSalt,           // Salt from wallet storage
   signingService,      // From identity.getSigningService()
-  'ALPHA',             // Coin type
+  ALPHA,               // Hex-encoded coin ID
   500n,                // Amount to send
   recipientPublicKey   // Uint8Array, 33 bytes
 );
@@ -491,7 +508,7 @@ const payload = await splitter.splitExact(
   token.raw,
   tokenSalt,
   signingService,
-  'ALPHA',
+  ALPHA,
   recipientPublicKey
 );
 ```
@@ -505,14 +522,17 @@ import { CoinManager } from '@jvsteiner/alphalite';
 
 const coinManager = new CoinManager();
 
+// Coin IDs are hex-encoded
+const ALPHA = '414c504841';
+
 // Get balance
-const balance = coinManager.getBalance(wallet, 'ALPHA');
+const balance = coinManager.getBalance(wallet, ALPHA);
 
 // Get all balances
 const balances = coinManager.getAllBalances(wallet);
 
 // Select tokens for an amount
-const selection = coinManager.selectTokensForAmount(wallet, 'ALPHA', 500n);
+const selection = coinManager.selectTokensForAmount(wallet, ALPHA, 500n);
 
 console.log(`Tokens to use: ${selection.tokens.length}`);
 console.log(`Total amount: ${selection.totalAmount}`);
@@ -565,8 +585,8 @@ token.coins           // ICoinBalance[]
 token.coinMap         // Map<string, bigint>
 token.nametagCount    // Number
 
-// Get specific coin balance
-const balance = token.getCoinBalance('ALPHA');  // bigint
+// Get specific coin balance (coin ID is hex-encoded)
+const balance = token.getCoinBalance('414c504841');  // bigint
 
 // Serialization
 const json = token.toJSON();      // String
@@ -585,7 +605,7 @@ const rawToken = token.raw;
 
 ```typescript
 interface ICoinBalance {
-  name: string;    // Coin name (e.g., 'ALPHA')
+  coinId: string;  // Hex-encoded coin ID (e.g., '414c504841' for "ALPHA")
   amount: bigint;  // Balance
 }
 ```
@@ -708,7 +728,7 @@ interface ITokenStatus {
 }
 
 interface ICoinBalance {
-  name: string;
+  coinId: string;   // Hex-encoded coin ID
   amount: bigint;
 }
 
@@ -742,7 +762,7 @@ interface IRecipientPayload {
   mintTransactionJson: string;
   salt: string;
   amount: string;
-  coinType: string;
+  coinId: string;   // Hex-encoded coin ID
 }
 ```
 

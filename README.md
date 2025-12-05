@@ -44,11 +44,15 @@ client.setTrustBase(AlphaClient.loadTrustBase(trustBaseJson));
 const token = await client.mint(wallet);
 console.log('Minted token:', token.id);
 
-// Mint with coins
+// Mint with coins (coin IDs are hex-encoded)
+// Example: "ALPHA" as UTF-8 bytes = 0x414c504841
+const ALPHA_COIN_ID = '414c504841';
+const BETA_COIN_ID = '42455441';
+
 const tokenWithCoins = await client.mint(wallet, {
   coins: [
-    ['ALPHA', 1000n],
-    ['BETA', 500n]
+    [ALPHA_COIN_ID, 1000n],
+    [BETA_COIN_ID, 500n]
   ],
   data: new TextEncoder().encode('My NFT metadata'),
   label: 'My First Token'

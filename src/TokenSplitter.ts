@@ -21,7 +21,7 @@ import type { MintCommitment } from "@unicitylabs/state-transition-sdk/lib/trans
 import type { TransferCommitment } from "@unicitylabs/state-transition-sdk/lib/transaction/TransferCommitment.js";
 
 import { SimpleToken } from "./SimpleToken.js";
-import { bytesToHex, generateRandom32 } from "./utils/crypto.js";
+import { bytesToHex, generateRandom32, hexToBytes } from "./utils/crypto.js";
 
 /**
  * Result of a split operation.
@@ -47,8 +47,8 @@ export interface IRecipientPayload {
   salt: string;
   /** Amount transferred */
   amount: string;
-  /** Coin type name */
-  coinType: string;
+  /** Hex-encoded coin ID */
+  coinId: string;
 }
 
 /**
@@ -78,7 +78,7 @@ export class TokenSplitter {
    * @param token The token to split
    * @param tokenSalt Salt used when the token was created (for signing)
    * @param signingService Signing service for the token owner
-   * @param coinType Coin type name (e.g., 'ALPHA')
+   * @param coinId Hex-encoded coin ID
    * @param amount Amount to send to recipient
    * @param recipientPublicKey Recipient's public key (33 bytes compressed secp256k1)
    * @returns Split result with change token and recipient payload
@@ -87,12 +87,12 @@ export class TokenSplitter {
     token: Token<IMintTransactionReason>,
     tokenSalt: Uint8Array,
     signingService: SigningService,
-    coinType: string,
+    coinId: string,
     amount: bigint,
     recipientPublicKey: Uint8Array,
   ): Promise<ISplitResult> {
-    const coinId = new CoinId(new TextEncoder().encode(coinType));
-    const tokenBalance = token.coins?.get(coinId) ?? 0n;
+    const coinIdObj = new CoinId(hexToBytes(coinId));
+    const tokenBalance = token.coins?.get(coinIdObj) ?? 0n;
     const changeAmount = tokenBalance - amount;
 
     if (changeAmount < 0n) {
@@ -129,8 +129,8 @@ export class TokenSplitter {
     const myAddress = await myPredicateRef.toAddress();
 
     // Build coin data for each new token
-    const recipientCoinData = TokenCoinData.create([[coinId, amount]]);
-    const changeCoinData = TokenCoinData.create([[coinId, changeAmount]]);
+    const recipientCoinData = TokenCoinData.create([[coinIdObj, amount]]);
+    const changeCoinData = TokenCoinData.create([[coinIdObj, changeAmount]]);
 
     // Build the split
     const builder = new TokenSplitBuilder();
@@ -221,7 +221,7 @@ export class TokenSplitter {
         mintTransactionJson: JSON.stringify(mintTransactions[0]!.toJSON()),
         salt: bytesToHex(recipientSalt),
         amount: amount.toString(),
-        coinType,
+        coinId,
       },
     };
   }
@@ -233,7 +233,7 @@ export class TokenSplitter {
    * @param token The token to transfer
    * @param tokenSalt Salt used when the token was created
    * @param signingService Signing service for the token owner
-   * @param coinType Coin type name
+   * @param coinId Hex-encoded coin ID
    * @param recipientPublicKey Recipient's public key (33 bytes compressed secp256k1)
    * @returns Payload for recipient
    */
@@ -241,14 +241,14 @@ export class TokenSplitter {
     token: Token<IMintTransactionReason>,
     tokenSalt: Uint8Array,
     signingService: SigningService,
-    coinType: string,
+    coinId: string,
     recipientPublicKey: Uint8Array,
   ): Promise<IRecipientPayload> {
-    const coinId = new CoinId(new TextEncoder().encode(coinType));
-    const amount = token.coins?.get(coinId) ?? 0n;
+    const coinIdObj = new CoinId(hexToBytes(coinId));
+    const amount = token.coins?.get(coinIdObj) ?? 0n;
 
     if (amount === 0n) {
-      throw new Error("Token has no balance for this coin type");
+      throw new Error("Token has no balance for this coin ID");
     }
 
     // Generate new token ID and salt for recipient
@@ -265,7 +265,7 @@ export class TokenSplitter {
     const recipientAddress = await recipientPredicateRef.toAddress();
 
     // Build coin data
-    const recipientCoinData = TokenCoinData.create([[coinId, amount]]);
+    const recipientCoinData = TokenCoinData.create([[coinIdObj, amount]]);
 
     // Build the split (single output token)
     const builder = new TokenSplitBuilder();
@@ -319,7 +319,7 @@ export class TokenSplitter {
       mintTransactionJson: JSON.stringify(mintTransaction.toJSON()),
       salt: bytesToHex(recipientSalt),
       amount: amount.toString(),
-      coinType,
+      coinId,
     };
   }
 

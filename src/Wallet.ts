@@ -546,29 +546,29 @@ export class Wallet {
   // ============ Balance Methods ============
 
   /**
-   * Get total balance for a specific coin type.
+   * Get total balance for a specific coin ID.
    *
-   * @param coinType The coin type (e.g., 'ALPHA')
+   * @param coinId Hex-encoded coin ID
    * @param identityId Optional identity to filter by
-   * @returns Total balance for the coin type
+   * @returns Total balance for the coin ID
    */
-  public getBalance(coinType: string, identityId?: string): bigint {
+  public getBalance(coinId: string, identityId?: string): bigint {
     const tokens = identityId
       ? this.listTokensForIdentity(identityId)
       : this.tokens;
 
     let total = 0n;
     for (const entry of tokens) {
-      total += entry.token.getCoinBalance(coinType);
+      total += entry.token.getCoinBalance(coinId);
     }
     return total;
   }
 
   /**
-   * Get balances for all coin types in the wallet.
+   * Get balances for all coin IDs in the wallet.
    *
    * @param identityId Optional identity to filter by
-   * @returns Map of coin type to total balance
+   * @returns Map of hex-encoded coin ID to total balance
    */
   public getBalances(identityId?: string): Map<string, bigint> {
     const tokens = identityId
@@ -579,8 +579,8 @@ export class Wallet {
 
     for (const entry of tokens) {
       for (const coin of entry.token.coins) {
-        const current = balances.get(coin.name) ?? 0n;
-        balances.set(coin.name, current + coin.amount);
+        const current = balances.get(coin.coinId) ?? 0n;
+        balances.set(coin.coinId, current + coin.amount);
       }
     }
 
@@ -590,17 +590,17 @@ export class Wallet {
   /**
    * Check if wallet can afford an amount.
    *
-   * @param coinType The coin type to check
+   * @param coinId Hex-encoded coin ID
    * @param amount The amount needed
    * @param identityId Optional identity to filter by
    * @returns True if balance >= amount
    */
   public canAfford(
-    coinType: string,
+    coinId: string,
     amount: bigint,
     identityId?: string,
   ): boolean {
-    return this.getBalance(coinType, identityId) >= amount;
+    return this.getBalance(coinId, identityId) >= amount;
   }
 
   // ============ Merge Operations ============

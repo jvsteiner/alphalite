@@ -20,6 +20,18 @@ import { Wallet } from "../../src/Wallet.js";
 import { TEST_NETWORK_TRUST_BASE } from "../../src/trustbase.js";
 import { bytesToHex } from "../../src/utils/crypto.js";
 
+/**
+ * Helper to convert a human-readable name to hex-encoded coin ID.
+ * In production, coin IDs are arbitrary bytes - this helper is just for test readability.
+ */
+function toHexCoinId(name: string): string {
+  return bytesToHex(new TextEncoder().encode(name));
+}
+
+// Hex-encoded coin IDs for tests
+const ALPHA = toHexCoinId("ALPHA");
+const BETA = toHexCoinId("BETA");
+
 // Increase timeout for network operations
 jest.setTimeout(120000);
 
@@ -60,16 +72,16 @@ describe("Integration: Network Operations", () => {
 
     it("should mint a token with coin balance", async () => {
       const token = await client.mint(wallet, {
-        coins: [["ALPHA", 1000n]],
+        coins: [[ALPHA, 1000n]],
         label: "Test Token with Coins",
       });
 
       expect(token.id).toBeDefined();
       expect(token.hasCoins).toBe(true);
-      expect(token.getCoinBalance("ALPHA")).toBe(1000n);
+      expect(token.getCoinBalance(ALPHA)).toBe(1000n);
 
       // Check wallet balance
-      expect(wallet.getBalance("ALPHA")).toBeGreaterThanOrEqual(1000n);
+      expect(wallet.getBalance(ALPHA)).toBeGreaterThanOrEqual(1000n);
     });
 
     it("should mint a token with data payload", async () => {
@@ -86,13 +98,13 @@ describe("Integration: Network Operations", () => {
     it("should mint a token with multiple coin types", async () => {
       const token = await client.mint(wallet, {
         coins: [
-          ["ALPHA", 500n],
-          ["BETA", 250n],
+          [ALPHA, 500n],
+          [BETA, 250n],
         ],
       });
 
-      expect(token.getCoinBalance("ALPHA")).toBe(500n);
-      expect(token.getCoinBalance("BETA")).toBe(250n);
+      expect(token.getCoinBalance(ALPHA)).toBe(500n);
+      expect(token.getCoinBalance(BETA)).toBe(250n);
     });
   });
 
@@ -114,7 +126,7 @@ describe("Integration: Network Operations", () => {
 
       // Mint a token for sender
       const token = await client.mint(senderWallet, {
-        coins: [["ALPHA", 100n]],
+        coins: [[ALPHA, 100n]],
       });
       const tokenId = token.id;
 
@@ -142,7 +154,7 @@ describe("Integration: Network Operations", () => {
       );
 
       expect(receivedToken.id).toBeDefined();
-      expect(receivedToken.getCoinBalance("ALPHA")).toBe(100n);
+      expect(receivedToken.getCoinBalance(ALPHA)).toBe(100n);
 
       // Token should be in recipient wallet
       expect(recipientWallet.listTokens().length).toBe(1);
@@ -157,7 +169,7 @@ describe("Integration: Network Operations", () => {
 
       // Mint exactly 100 ALPHA
       await client.mint(senderWallet, {
-        coins: [["ALPHA", 100n]],
+        coins: [[ALPHA, 100n]],
       });
 
       // Get recipient public key
@@ -167,7 +179,7 @@ describe("Integration: Network Operations", () => {
       // Send exactly 100 ALPHA (should not require split)
       const result = await client.sendAmount(
         senderWallet,
-        "ALPHA",
+        ALPHA,
         100n,
         recipientPubKey,
       );
@@ -177,7 +189,7 @@ describe("Integration: Network Operations", () => {
       expect(result.splitPerformed).toBe(false);
 
       // Sender should have no ALPHA left
-      expect(senderWallet.getBalance("ALPHA")).toBe(0n);
+      expect(senderWallet.getBalance(ALPHA)).toBe(0n);
 
       // Recipient receives
       const tokens = await client.receiveAmount(
@@ -186,8 +198,8 @@ describe("Integration: Network Operations", () => {
       );
 
       expect(tokens.length).toBe(1);
-      expect(tokens[0]!.getCoinBalance("ALPHA")).toBe(100n);
-      expect(recipientWallet.getBalance("ALPHA")).toBe(100n);
+      expect(tokens[0]!.getCoinBalance(ALPHA)).toBe(100n);
+      expect(recipientWallet.getBalance(ALPHA)).toBe(100n);
     });
 
     it("should send partial amount (split required)", async () => {
@@ -197,7 +209,7 @@ describe("Integration: Network Operations", () => {
 
       // Mint 1000 ALPHA
       await client.mint(senderWallet, {
-        coins: [["ALPHA", 1000n]],
+        coins: [[ALPHA, 1000n]],
       });
 
       // Get recipient public key
@@ -207,7 +219,7 @@ describe("Integration: Network Operations", () => {
       // Send 300 ALPHA (requires split, 700 change)
       const result = await client.sendAmount(
         senderWallet,
-        "ALPHA",
+        ALPHA,
         300n,
         recipientPubKey,
       );
@@ -217,7 +229,7 @@ describe("Integration: Network Operations", () => {
       expect(result.splitPerformed).toBe(true);
 
       // Sender should have 700 ALPHA as change
-      expect(senderWallet.getBalance("ALPHA")).toBe(700n);
+      expect(senderWallet.getBalance(ALPHA)).toBe(700n);
 
       // Recipient receives
       const tokens = await client.receiveAmount(
@@ -226,8 +238,8 @@ describe("Integration: Network Operations", () => {
       );
 
       expect(tokens.length).toBe(1);
-      expect(tokens[0]!.getCoinBalance("ALPHA")).toBe(300n);
-      expect(recipientWallet.getBalance("ALPHA")).toBe(300n);
+      expect(tokens[0]!.getCoinBalance(ALPHA)).toBe(300n);
+      expect(recipientWallet.getBalance(ALPHA)).toBe(300n);
     });
 
     it("should handle multi-token send", async () => {
@@ -236,11 +248,11 @@ describe("Integration: Network Operations", () => {
       const recipientWallet = await Wallet.create({ name: "Recipient" });
 
       // Mint multiple small tokens
-      await client.mint(senderWallet, { coins: [["ALPHA", 50n]] });
-      await client.mint(senderWallet, { coins: [["ALPHA", 30n]] });
-      await client.mint(senderWallet, { coins: [["ALPHA", 100n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 50n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 30n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 100n]] });
 
-      expect(senderWallet.getBalance("ALPHA")).toBe(180n);
+      expect(senderWallet.getBalance(ALPHA)).toBe(180n);
 
       // Get recipient public key
       const recipientIdentity = recipientWallet.getDefaultIdentity();
@@ -249,7 +261,7 @@ describe("Integration: Network Operations", () => {
       // Send 80 ALPHA (should use 30 + 50 = 80 exactly)
       const result = await client.sendAmount(
         senderWallet,
-        "ALPHA",
+        ALPHA,
         80n,
         recipientPubKey,
       );
@@ -259,7 +271,7 @@ describe("Integration: Network Operations", () => {
       expect(result.splitPerformed).toBe(false);
 
       // Sender should have 100 ALPHA left (the unused token)
-      expect(senderWallet.getBalance("ALPHA")).toBe(100n);
+      expect(senderWallet.getBalance(ALPHA)).toBe(100n);
 
       // Recipient receives
       const tokens = await client.receiveAmount(
@@ -268,7 +280,7 @@ describe("Integration: Network Operations", () => {
       );
 
       expect(tokens.length).toBe(2);
-      expect(recipientWallet.getBalance("ALPHA")).toBe(80n);
+      expect(recipientWallet.getBalance(ALPHA)).toBe(80n);
     });
   });
 
@@ -278,7 +290,7 @@ describe("Integration: Network Operations", () => {
       const recipientWallet = await Wallet.create({ name: "Recipient" });
 
       // Mint only 50 ALPHA
-      await client.mint(senderWallet, { coins: [["ALPHA", 50n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 50n]] });
 
       const recipientPubKey = bytesToHex(
         recipientWallet.getDefaultIdentity().publicKey,
@@ -286,7 +298,7 @@ describe("Integration: Network Operations", () => {
 
       // Try to send 100 ALPHA
       await expect(
-        client.sendAmount(senderWallet, "ALPHA", 100n, recipientPubKey),
+        client.sendAmount(senderWallet, ALPHA, 100n, recipientPubKey),
       ).rejects.toThrow(/Insufficient.*balance/);
     });
 
@@ -294,14 +306,14 @@ describe("Integration: Network Operations", () => {
       const senderWallet = await Wallet.create({ name: "Sender" });
       const recipientWallet = await Wallet.create({ name: "Recipient" });
 
-      await client.mint(senderWallet, { coins: [["ALPHA", 100n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 100n]] });
 
       const recipientPubKey = bytesToHex(
         recipientWallet.getDefaultIdentity().publicKey,
       );
 
       await expect(
-        client.sendAmount(senderWallet, "ALPHA", 0n, recipientPubKey),
+        client.sendAmount(senderWallet, ALPHA, 0n, recipientPubKey),
       ).rejects.toThrow("Amount must be positive");
     });
   });

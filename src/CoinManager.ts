@@ -27,7 +27,7 @@ export interface ITokenSelection {
 }
 
 /**
- * Internal representation of a token with its balance for a specific coin type.
+ * Internal representation of a token with its balance for a specific coin ID.
  */
 interface ITokenWithBalance {
   readonly entry: TokenEntry;
@@ -39,16 +39,16 @@ interface ITokenWithBalance {
  */
 export class CoinManager {
   /**
-   * Get total balance for a specific coin type.
+   * Get total balance for a specific coin ID.
    *
    * @param wallet The wallet to query
-   * @param coinType The coin type (e.g., 'ALPHA')
+   * @param coinId Hex-encoded coin ID
    * @param identityId Optional identity to filter by
-   * @returns Total balance for the coin type
+   * @returns Total balance for the coin ID
    */
   public getBalance(
     wallet: Wallet,
-    coinType: string,
+    coinId: string,
     identityId?: string,
   ): bigint {
     const tokens = identityId
@@ -57,17 +57,17 @@ export class CoinManager {
 
     let total = 0n;
     for (const entry of tokens) {
-      total += entry.token.getCoinBalance(coinType);
+      total += entry.token.getCoinBalance(coinId);
     }
     return total;
   }
 
   /**
-   * Get balances for all coin types in the wallet.
+   * Get balances for all coin IDs in the wallet.
    *
    * @param wallet The wallet to query
    * @param identityId Optional identity to filter by
-   * @returns Map of coin type to total balance
+   * @returns Map of hex-encoded coin ID to total balance
    */
   public getAllBalances(
     wallet: Wallet,
@@ -81,8 +81,8 @@ export class CoinManager {
 
     for (const entry of tokens) {
       for (const coin of entry.token.coins) {
-        const current = balances.get(coin.name) ?? 0n;
-        balances.set(coin.name, current + coin.amount);
+        const current = balances.get(coin.coinId) ?? 0n;
+        balances.set(coin.coinId, current + coin.amount);
       }
     }
 
@@ -98,7 +98,7 @@ export class CoinManager {
    * 3. Consume small tokens first, split larger one for remainder
    *
    * @param wallet The wallet to select from
-   * @param coinType The coin type to send
+   * @param coinId Hex-encoded coin ID
    * @param amount The amount to send
    * @param identityId Optional identity to filter by
    * @returns Token selection result
@@ -106,7 +106,7 @@ export class CoinManager {
    */
   public selectTokensForAmount(
     wallet: Wallet,
-    coinType: string,
+    coinId: string,
     amount: bigint,
     identityId?: string,
   ): ITokenSelection {
@@ -114,15 +114,15 @@ export class CoinManager {
       throw new Error("Amount must be positive");
     }
 
-    // Get all tokens with non-zero balance for this coin type
+    // Get all tokens with non-zero balance for this coin ID
     const tokensWithBalance = this.getTokensWithBalance(
       wallet,
-      coinType,
+      coinId,
       identityId,
     );
 
     if (tokensWithBalance.length === 0) {
-      throw new Error(`No tokens with ${coinType} balance`);
+      throw new Error(`No tokens with coin ID ${coinId} balance`);
     }
 
     // Calculate total available balance
@@ -133,7 +133,7 @@ export class CoinManager {
 
     if (totalBalance < amount) {
       throw new Error(
-        `Insufficient ${coinType} balance: have ${totalBalance}, need ${amount}`,
+        `Insufficient balance for coin ID ${coinId}: have ${totalBalance}, need ${amount}`,
       );
     }
 
@@ -183,11 +183,11 @@ export class CoinManager {
   }
 
   /**
-   * Get tokens that have a non-zero balance for the specified coin type.
+   * Get tokens that have a non-zero balance for the specified coin ID.
    */
   private getTokensWithBalance(
     wallet: Wallet,
-    coinType: string,
+    coinId: string,
     identityId?: string,
   ): ITokenWithBalance[] {
     const entries = identityId
@@ -197,7 +197,7 @@ export class CoinManager {
     const result: ITokenWithBalance[] = [];
 
     for (const entry of entries) {
-      const balance = entry.token.getCoinBalance(coinType);
+      const balance = entry.token.getCoinBalance(coinId);
       if (balance > 0n) {
         result.push({ entry, balance });
       }
