@@ -30,6 +30,8 @@ export interface ITokenEntryJson {
   readonly identityId: string;
   /** Serialized SimpleToken JSON */
   readonly token: string;
+  /** Hex-encoded salt used for predicate derivation (required for spending) */
+  readonly salt: string;
   /** Human-readable label for this token */
   readonly label?: string;
   /** ISO timestamp when token was added to wallet */
@@ -172,4 +174,26 @@ export interface ICoinBalance {
 export interface ITokenStatus {
   readonly spent: boolean;
   readonly transactionCount: number;
+}
+
+/**
+ * Options for amount-based transfers.
+ */
+export interface ISendAmountOptions {
+  /** Identity ID to send from - uses default if not provided */
+  readonly identityId?: string;
+}
+
+/**
+ * Result of an amount-based send operation.
+ */
+export interface ISendAmountResult {
+  /** Amount sent */
+  readonly sent: bigint;
+  /** JSON payload to send to recipient (they call receiveAmount with this) */
+  readonly recipientPayload: string;
+  /** Number of tokens consumed in this transfer */
+  readonly tokensUsed: number;
+  /** Whether a split was performed (true if change was created) */
+  readonly splitPerformed: boolean;
 }

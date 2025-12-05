@@ -2,12 +2,17 @@
  * Simplified token wrapper for easy access to token properties.
  */
 
-import type { IMintTransactionReason } from '@unicitylabs/state-transition-sdk/lib/transaction/IMintTransactionReason.js';
-import { Token } from '@unicitylabs/state-transition-sdk/lib/token/Token.js';
-import { TokenCoinData } from '@unicitylabs/state-transition-sdk/lib/token/fungible/TokenCoinData.js';
+import { HashAlgorithm } from "@unicitylabs/state-transition-sdk/lib/hash/HashAlgorithm.js";
+import { UnmaskedPredicate } from "@unicitylabs/state-transition-sdk/lib/predicate/embedded/UnmaskedPredicate.js";
+import { SigningService } from "@unicitylabs/state-transition-sdk/lib/sign/SigningService.js";
+import { TokenCoinData } from "@unicitylabs/state-transition-sdk/lib/token/fungible/TokenCoinData.js";
+import { Token } from "@unicitylabs/state-transition-sdk/lib/token/Token.js";
+import { TokenState } from "@unicitylabs/state-transition-sdk/lib/token/TokenState.js";
+import type { IMintTransactionReason } from "@unicitylabs/state-transition-sdk/lib/transaction/IMintTransactionReason.js";
+import { MintTransaction } from "@unicitylabs/state-transition-sdk/lib/transaction/MintTransaction.js";
 
-import { ICoinBalance } from './types.js';
-import { bytesToHex } from './utils/crypto.js';
+import { ICoinBalance } from "./types.js";
+import { bytesToHex } from "./utils/crypto.js";
 
 /**
  * Lightweight wrapper around Token providing simplified access to common properties.
@@ -35,6 +40,54 @@ export class SimpleToken {
    */
   public static async fromCBOR(bytes: Uint8Array): Promise<SimpleToken> {
     const token = await Token.fromCBOR(bytes);
+    return new SimpleToken(token);
+  }
+
+  /**
+   * Create a token from a split mint transaction.
+   * Used when receiving tokens from a split transfer.
+   *
+   * @param mintTransactionJson JSON string of the mint transaction
+   * @param salt Salt provided by the sender (must match what was used in the split)
+   * @param signingService Signing service for the recipient
+   * @returns The received token
+   */
+  public static async fromSplitMint(
+    mintTransactionJson: string,
+    salt: Uint8Array,
+    signingService: SigningService,
+  ): Promise<SimpleToken> {
+    // Parse the mint transaction
+    const mintTransaction = await MintTransaction.fromJSON(
+      JSON.parse(mintTransactionJson),
+    );
+
+    // Extract token info from the mint transaction
+    const tokenId = mintTransaction.data.tokenId;
+    const tokenType = mintTransaction.data.tokenType;
+
+    // Create predicate using the salt from the sender
+    // CRITICAL: Must use the exact salt the sender used for our address
+    const predicate = await UnmaskedPredicate.create(
+      tokenId,
+      tokenType,
+      signingService,
+      HashAlgorithm.SHA256,
+      salt,
+    );
+
+    const tokenState = new TokenState(predicate, null);
+
+    // Construct the token using fromJSON to avoid verification issues
+    const tokenJson = {
+      version: "2.0",
+      state: tokenState.toJSON(),
+      genesis: mintTransaction.toJSON(),
+      transactions: [],
+      nametags: [],
+    };
+
+    const token = await Token.fromJSON(tokenJson);
     return new SimpleToken(token);
   }
 
@@ -187,7 +240,9 @@ export class SimpleToken {
     ];
 
     if (this.hasCoins) {
-      const coinSummary = this.coins.map((c) => `${c.name}:${c.amount}`).join(',');
+      const coinSummary = this.coins
+        .map((c) => `${c.name}:${c.amount}`)
+        .join(",");
       parts.push(`coins={${coinSummary}}`);
     }
 
@@ -195,7 +250,7 @@ export class SimpleToken {
       parts.push(`data=${this.data.length}bytes`);
     }
 
-    return parts.join(' ');
+    return parts.join(" ");
   }
 
   // ============ Raw Access ============

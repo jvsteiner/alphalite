@@ -19,7 +19,8 @@
     "lint:fix": "eslint \"src/**/*\" \"tests/**/*\" --fix",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=tests",
     "test:single": "jest",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "repl": "node --experimental-vm-modules -e \"(async()=>{Object.assign(global,await import('./lib/index.js'));console.log('Alphalite loaded. Available: Wallet, AlphaClient, CoinManager, SimpleToken, Identity, TokenEntry, bytesToHex, hexToBytes')})()\" -i"
   },
   "repository": {
     "type": "git",

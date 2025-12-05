@@ -182,6 +182,7 @@ export class TokenEntry {
   public constructor(
     public readonly identityId: string,
     public readonly token: SimpleToken,
+    public readonly salt: Uint8Array,
     public readonly label: string | undefined,
     public readonly addedAt: Date,
   ) {}
@@ -191,6 +192,7 @@ export class TokenEntry {
       addedAt: this.addedAt.toISOString(),
       identityId: this.identityId,
       label: this.label,
+      salt: bytesToHex(this.salt),
       token: this.token.toJSON(),
     };
   }
@@ -199,6 +201,7 @@ export class TokenEntry {
     return new TokenEntry(
       json.identityId,
       await SimpleToken.fromJSON(json.token),
+      hexToBytes(json.salt),
       json.label,
       new Date(json.addedAt),
     );
@@ -441,9 +444,14 @@ export class Wallet {
 
   /**
    * Add a token to the wallet.
+   * @param token The token to add
+   * @param salt The salt used for predicate derivation (required for spending)
+   * @param identityId Identity that owns this token (defaults to default identity)
+   * @param label Human-readable label for the token
    */
   public addToken(
     token: SimpleToken,
+    salt: Uint8Array,
     identityId?: string,
     label?: string,
   ): void {
@@ -452,7 +460,7 @@ export class Wallet {
       throw new Error(`Identity with ID ${id} not found`);
     }
 
-    this.tokens.push(new TokenEntry(id, token, label, new Date()));
+    this.tokens.push(new TokenEntry(id, token, salt, label, new Date()));
     this.touch();
   }
 
@@ -466,7 +474,13 @@ export class Wallet {
     }
 
     this.tokens.push(
-      new TokenEntry(identityId, entry.token, entry.label, new Date()),
+      new TokenEntry(
+        identityId,
+        entry.token,
+        entry.salt,
+        entry.label,
+        new Date(),
+      ),
     );
     this.touch();
   }
@@ -508,7 +522,11 @@ export class Wallet {
   /**
    * Update a token (e.g., after receiving a transfer).
    */
-  public updateToken(tokenId: string, newToken: SimpleToken): void {
+  public updateToken(
+    tokenId: string,
+    newToken: SimpleToken,
+    newSalt?: Uint8Array,
+  ): void {
     const index = this.tokens.findIndex((e) => e.token.id === tokenId);
     if (index === -1) {
       throw new Error(`Token with ID ${tokenId} not found`);
@@ -518,10 +536,71 @@ export class Wallet {
     this.tokens[index] = new TokenEntry(
       entry.identityId,
       newToken,
+      newSalt ?? entry.salt,
       entry.label,
       entry.addedAt,
     );
     this.touch();
+  }
+
+  // ============ Balance Methods ============
+
+  /**
+   * Get total balance for a specific coin type.
+   *
+   * @param coinType The coin type (e.g., 'ALPHA')
+   * @param identityId Optional identity to filter by
+   * @returns Total balance for the coin type
+   */
+  public getBalance(coinType: string, identityId?: string): bigint {
+    const tokens = identityId
+      ? this.listTokensForIdentity(identityId)
+      : this.tokens;
+
+    let total = 0n;
+    for (const entry of tokens) {
+      total += entry.token.getCoinBalance(coinType);
+    }
+    return total;
+  }
+
+  /**
+   * Get balances for all coin types in the wallet.
+   *
+   * @param identityId Optional identity to filter by
+   * @returns Map of coin type to total balance
+   */
+  public getBalances(identityId?: string): Map<string, bigint> {
+    const tokens = identityId
+      ? this.listTokensForIdentity(identityId)
+      : this.tokens;
+
+    const balances = new Map<string, bigint>();
+
+    for (const entry of tokens) {
+      for (const coin of entry.token.coins) {
+        const current = balances.get(coin.name) ?? 0n;
+        balances.set(coin.name, current + coin.amount);
+      }
+    }
+
+    return balances;
+  }
+
+  /**
+   * Check if wallet can afford an amount.
+   *
+   * @param coinType The coin type to check
+   * @param amount The amount needed
+   * @param identityId Optional identity to filter by
+   * @returns True if balance >= amount
+   */
+  public canAfford(
+    coinType: string,
+    amount: bigint,
+    identityId?: string,
+  ): boolean {
+    return this.getBalance(coinType, identityId) >= amount;
   }
 
   // ============ Merge Operations ============
@@ -546,7 +625,13 @@ export class Wallet {
           ? entry.identityId
           : this.defaultIdentityId;
         this.tokens.push(
-          new TokenEntry(identityId, entry.token, entry.label, entry.addedAt),
+          new TokenEntry(
+            identityId,
+            entry.token,
+            entry.salt,
+            entry.label,
+            entry.addedAt,
+          ),
         );
       }
     }
