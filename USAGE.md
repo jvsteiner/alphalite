@@ -778,6 +778,53 @@ interface IAlphaClientConfig {
 
 ---
 
+## Transaction Safety
+
+### The Problem
+
+When a token transfer fails after the blockchain accepts the transaction but before the wallet saves its updated state, the wallet can become out of sync with the blockchain. This can lead to `REQUEST_ID_EXISTS` errors when retrying.
+
+### Solution: State Change Callbacks
+
+Use the `onWalletStateChange` callback to persist the wallet immediately after each blockchain transaction succeeds:
+
+```typescript
+import { AlphaClient, Wallet, WalletStateChange } from '@jvsteiner/alphalite';
+
+// Create a wallet saver function
+async function saveWallet(wallet: Wallet) {
+  const json = wallet.toJSON({ password: 'your-password' });
+  await fs.writeFile('wallet.json', JSON.stringify(json));
+}
+
+// Configure client with state change callback
+const client = new AlphaClient({
+  onWalletStateChange: async (wallet: Wallet, change: WalletStateChange) => {
+    // Persist wallet immediately after each blockchain transaction
+    await saveWallet(wallet);
+    console.log(`Wallet saved: ${change.description}`);
+  }
+});
+
+// Now all operations will trigger saves after blockchain success
+const result = await client.sendAmount(wallet, ALPHA, 500n, recipientPubKey);
+// Wallet is already saved before this line executes
+```
+
+### State Change Types
+
+The callback receives a `WalletStateChange` object with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"token_added" \| "token_removed" \| "token_replaced"` | Type of change |
+| `tokenIds` | `string[]` | Token IDs involved in the change |
+| `description` | `string` | Human-readable description |
+
+For multi-token transfers, the callback is invoked after each individual token is processed, ensuring incremental persistence.
+
+---
+
 ## Error Handling
 
 Alphalite throws descriptive errors:

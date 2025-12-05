@@ -40,6 +40,8 @@ import {
   ISendResult,
   ITokenStatus,
   ITransferOptions,
+  WalletStateChangeCallback,
+  WalletStateChange,
 } from "./types.js";
 import { generateRandom32, hexToBytes } from "./utils/crypto.js";
 
@@ -62,6 +64,22 @@ export interface IAlphaClientConfig {
   readonly trustBase?: RootTrustBase;
   /** API key for authentication (optional) */
   readonly apiKey?: string;
+  /**
+   * Callback invoked after wallet state is modified following a successful
+   * blockchain transaction. Use this to persist the wallet immediately and
+   * prevent state corruption if subsequent operations fail.
+   *
+   * @example
+   * ```typescript
+   * const client = new AlphaClient({
+   *   onWalletStateChange: async (wallet, change) => {
+   *     await saveWalletToStorage(wallet.toJSON({ password }));
+   *     console.log(`Wallet saved after: ${change.description}`);
+   *   }
+   * });
+   * ```
+   */
+  readonly onWalletStateChange?: WalletStateChangeCallback;
 }
 
 /**
@@ -73,6 +91,7 @@ export class AlphaClient {
   private readonly client: StateTransitionClient;
   private readonly coinManager: CoinManager;
   private trustBase: RootTrustBase | null;
+  private readonly onWalletStateChange?: WalletStateChangeCallback;
 
   public constructor(config: IAlphaClientConfig = {}) {
     const aggregatorClient = new AggregatorClient(
@@ -82,6 +101,7 @@ export class AlphaClient {
     this.client = new StateTransitionClient(aggregatorClient);
     this.coinManager = new CoinManager();
     this.trustBase = config.trustBase ?? null;
+    this.onWalletStateChange = config.onWalletStateChange;
   }
 
   // ============ Trust Base ============
@@ -206,6 +226,13 @@ export class AlphaClient {
     // Add to wallet with salt (needed for future spending)
     wallet.addToken(simpleToken, salt, identity.id, options.label);
 
+    // Notify about state change so caller can persist immediately
+    await this.notifyStateChange(wallet, {
+      type: "token_added",
+      tokenIds: [simpleToken.id],
+      description: `Minted token ${simpleToken.id.slice(0, 8)}...`,
+    });
+
     return simpleToken;
   }
 
@@ -284,6 +311,13 @@ export class AlphaClient {
 
     // Remove token from wallet (it's been sent)
     wallet.removeToken(tokenId);
+
+    // Notify about state change so caller can persist immediately
+    await this.notifyStateChange(wallet, {
+      type: "token_removed",
+      tokenIds: [tokenId],
+      description: `Sent token ${tokenId.slice(0, 8)}...`,
+    });
 
     return {
       tokenJson: JSON.stringify(token.toJSON()),
@@ -369,6 +403,13 @@ export class AlphaClient {
         // Remove the consumed token from wallet
         wallet.removeToken(tokenEntry.token.id);
 
+        // Notify immediately after blockchain success so caller can persist
+        await this.notifyStateChange(wallet, {
+          type: "token_removed",
+          tokenIds: [tokenEntry.token.id],
+          description: `Sent ${amount} of coin ${coinId.slice(0, 8)}... (exact match)`,
+        });
+
         return {
           sent: amount,
           recipientPayload: JSON.stringify(recipientPayload),
@@ -394,6 +435,13 @@ export class AlphaClient {
           identity.id,
           tokenEntry.label ? `${tokenEntry.label} (change)` : undefined,
         );
+
+        // Notify immediately after blockchain success so caller can persist
+        await this.notifyStateChange(wallet, {
+          type: "token_replaced",
+          tokenIds: [tokenEntry.token.id, splitResult.changeToken.id],
+          description: `Split token: sent ${amount}, change ${splitResult.changeToken.getCoinBalance(coinId)}`,
+        });
 
         return {
           sent: amount,
@@ -435,6 +483,13 @@ export class AlphaClient {
 
       // Remove the consumed token
       wallet.removeToken(tokenEntry.token.id);
+
+      // Notify after each token is consumed so caller can persist incrementally
+      await this.notifyStateChange(wallet, {
+        type: "token_removed",
+        tokenIds: [tokenEntry.token.id],
+        description: `Consumed token ${tokenEntry.token.id.slice(0, 8)}... (${tokenBalance} of ${coinId.slice(0, 8)}...)`,
+      });
     }
 
     // Handle the last token
@@ -460,6 +515,13 @@ export class AlphaClient {
         identity.id,
         lastToken.label ? `${lastToken.label} (change)` : undefined,
       );
+
+      // Notify after split so caller can persist
+      await this.notifyStateChange(wallet, {
+        type: "token_replaced",
+        tokenIds: [lastToken.token.id, splitResult.changeToken.id],
+        description: `Split last token: sent ${selection.splitAmount}, change ${splitResult.changeToken.getCoinBalance(coinId)}`,
+      });
     } else {
       // Full transfer of last token
       const lastTokenBalance = lastToken.token.getCoinBalance(coinId);
@@ -476,6 +538,13 @@ export class AlphaClient {
       totalSent += lastTokenBalance;
 
       wallet.removeToken(lastToken.token.id);
+
+      // Notify after removal so caller can persist
+      await this.notifyStateChange(wallet, {
+        type: "token_removed",
+        tokenIds: [lastToken.token.id],
+        description: `Consumed last token ${lastToken.token.id.slice(0, 8)}... (${lastTokenBalance} of ${coinId.slice(0, 8)}...)`,
+      });
     }
 
     // For multi-token transfers, wrap all payloads together
@@ -554,6 +623,13 @@ export class AlphaClient {
 
     // Add to wallet with salt (needed for future spending)
     wallet.addToken(simpleToken, salt, identity.id, options.label);
+
+    // Notify about state change so caller can persist immediately
+    await this.notifyStateChange(wallet, {
+      type: "token_added",
+      tokenIds: [simpleToken.id],
+      description: `Received token ${simpleToken.id.slice(0, 8)}...`,
+    });
 
     return simpleToken;
   }
@@ -646,6 +722,13 @@ export class AlphaClient {
     );
 
     wallet.addToken(token, salt, identityId, label);
+
+    // Notify about state change so caller can persist immediately
+    await this.notifyStateChange(wallet, {
+      type: "token_added",
+      tokenIds: [token.id],
+      description: `Received split token ${token.id.slice(0, 8)}... (${payload.amount} ${payload.coinId.slice(0, 8)}...)`,
+    });
 
     return token;
   }
@@ -759,5 +842,18 @@ export class AlphaClient {
     const hasher = new DataHasher(HashAlgorithm.SHA256);
     hasher.update(data);
     return hasher.digest();
+  }
+
+  /**
+   * Notify about wallet state change. This allows callers to persist
+   * the wallet immediately after blockchain transactions succeed.
+   */
+  private async notifyStateChange(
+    wallet: Wallet,
+    change: WalletStateChange,
+  ): Promise<void> {
+    if (this.onWalletStateChange) {
+      await this.onWalletStateChange(wallet, change);
+    }
   }
 }

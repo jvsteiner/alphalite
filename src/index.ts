@@ -35,6 +35,8 @@ export {
   IWalletExportOptions,
   IWalletImportOptions,
   IWalletJson,
+  WalletStateChange,
+  WalletStateChangeCallback,
 } from "./types.js";
 
 // Utilities

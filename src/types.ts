@@ -198,3 +198,31 @@ export interface ISendAmountResult {
   /** Whether a split was performed (true if change was created) */
   readonly splitPerformed: boolean;
 }
+
+/**
+ * Callback invoked after wallet state is modified following a successful
+ * blockchain transaction. This allows the caller to persist the wallet
+ * immediately to prevent state corruption if subsequent operations fail.
+ *
+ * @param wallet The wallet that was modified
+ * @param operation Description of the operation that was performed
+ */
+export type WalletStateChangeCallback = (
+  wallet: Wallet,
+  operation: WalletStateChange,
+) => void | Promise<void>;
+
+/**
+ * Describes a wallet state change after a blockchain transaction.
+ */
+export interface WalletStateChange {
+  /** Type of operation */
+  readonly type: "token_added" | "token_removed" | "token_replaced";
+  /** Token ID(s) involved */
+  readonly tokenIds: string[];
+  /** Human-readable description */
+  readonly description: string;
+}
+
+// Forward declaration for Wallet type used in callback
+import type { Wallet } from "./Wallet.js";
