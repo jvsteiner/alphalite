@@ -704,6 +704,19 @@ export class AlphaClient {
 
     const simpleToken = SimpleToken.fromToken(finalizedToken);
 
+    // SECURITY: Verify the token is not already spent on the blockchain
+    const isSpent = await this.client.isTokenStateSpent(
+      trustBase,
+      simpleToken.raw,
+      signingService.publicKey,
+    );
+
+    if (isSpent) {
+      throw new Error(
+        `Token ${simpleToken.id} has already been spent on the blockchain`,
+      );
+    }
+
     // Add to wallet with salt (needed for future spending)
     wallet.addToken(simpleToken, salt, identity.id, options.label);
 
@@ -796,6 +809,7 @@ export class AlphaClient {
     signingService: SigningService,
     label?: string,
   ): Promise<SimpleToken> {
+    const trustBase = this.getTrustBase();
     const salt = hexToBytes(payload.salt);
 
     const token = await SimpleToken.fromSplitMint(
@@ -803,6 +817,19 @@ export class AlphaClient {
       salt,
       signingService,
     );
+
+    // SECURITY: Verify the token is not already spent on the blockchain
+    const isSpent = await this.client.isTokenStateSpent(
+      trustBase,
+      token.raw,
+      signingService.publicKey,
+    );
+
+    if (isSpent) {
+      throw new Error(
+        `Token ${token.id} has already been spent on the blockchain`,
+      );
+    }
 
     wallet.addToken(token, salt, identityId, label);
 

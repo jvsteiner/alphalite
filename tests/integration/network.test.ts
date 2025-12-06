@@ -438,6 +438,50 @@ describe("Integration: Token Security", () => {
     });
   });
 
+  describe("spent token prevention", () => {
+    it("should not accept a token that has already been spent on the blockchain", async () => {
+      const walletA = await Wallet.create({ name: "Wallet A" });
+      const walletB = await Wallet.create({ name: "Wallet B" });
+
+      // Wallet A mints a token
+      await client.mint(walletA, { coins: [[ALPHA, 100n]] });
+
+      // Wallet A sends to Wallet B
+      const walletBPubKey = bytesToHex(walletB.getDefaultIdentity().publicKey);
+      const sendResult = await client.sendAmount(
+        walletA,
+        ALPHA,
+        100n,
+        walletBPubKey,
+      );
+
+      // Keep a copy of the payload before receiving
+      const token1Payload = sendResult.recipientPayload;
+
+      // Wallet B receives the token
+      await client.receiveAmount(walletB, token1Payload);
+      expect(walletB.getBalance(ALPHA)).toBe(100n);
+
+      // Wallet B spends the token back to Wallet A (or anywhere)
+      const walletAPubKey = bytesToHex(walletA.getDefaultIdentity().publicKey);
+      await client.sendAmount(walletB, ALPHA, 100n, walletAPubKey);
+
+      // Wallet B should now be empty
+      expect(walletB.getBalance(ALPHA)).toBe(0n);
+      expect(walletB.listTokens()).toHaveLength(0);
+
+      // Now try to receive the original token1 payload again in Wallet B
+      // This should fail because the token has been spent on the blockchain
+      await expect(
+        client.receiveAmount(walletB, token1Payload),
+      ).rejects.toThrow();
+
+      // Wallet B should still be empty
+      expect(walletB.getBalance(ALPHA)).toBe(0n);
+      expect(walletB.listTokens()).toHaveLength(0);
+    });
+  });
+
   describe("wrong wallet prevention", () => {
     it("should not accept tokens meant for a different wallet", async () => {
       const senderWallet = await Wallet.create({ name: "Sender" });
