@@ -285,6 +285,54 @@ describe("Integration: Network Operations", () => {
     });
   });
 
+  describe("spent token removal", () => {
+    it("should remove spent tokens from wallet and update balance correctly", async () => {
+      const senderWallet = await Wallet.create({ name: "Sender" });
+      const recipientWallet = await Wallet.create({ name: "Recipient" });
+
+      // Mint two tokens: 1000 ALPHA and 10 ALPHA
+      await client.mint(senderWallet, { coins: [[ALPHA, 1000n]] });
+      await client.mint(senderWallet, { coins: [[ALPHA, 10n]] });
+
+      // Verify initial state: 2 tokens, 1010 ALPHA total
+      expect(senderWallet.listTokens()).toHaveLength(2);
+      expect(senderWallet.getBalance(ALPHA)).toBe(1010n);
+
+      // Get recipient public key
+      const recipientPubKey = bytesToHex(
+        recipientWallet.getDefaultIdentity().publicKey,
+      );
+
+      // Send 100 ALPHA
+      // Algorithm will: consume 10n token fully + split 90n from 1000n token
+      // This reduces fragmentation by eliminating the small 10n token
+      // Result: sender keeps 910n change token, recipient gets 10n + 90n
+      const result = await client.sendAmount(
+        senderWallet,
+        ALPHA,
+        100n,
+        recipientPubKey,
+      );
+
+      expect(result.sent).toBe(100n);
+      expect(result.splitPerformed).toBe(true);
+      expect(result.tokensUsed).toBe(2); // Both tokens were used
+
+      // After spending: should have 1 token (910 change), balance 910
+      // The 10n token was consumed, 1000n was split into 90n sent + 910n change
+      expect(senderWallet.listTokens()).toHaveLength(1);
+      expect(senderWallet.getBalance(ALPHA)).toBe(910n);
+
+      // Verify the remaining token is the 910n change
+      const tokenBalances = senderWallet
+        .listTokens()
+        .map((t) => t.token.getCoinBalance(ALPHA));
+      expect(tokenBalances).toContain(910n); // Change from split
+      expect(tokenBalances).not.toContain(10n); // 10 was consumed
+      expect(tokenBalances).not.toContain(1000n); // 1000 was split
+    });
+  });
+
   describe("error handling", () => {
     it("should throw on insufficient balance", async () => {
       const senderWallet = await Wallet.create({ name: "Sender" });

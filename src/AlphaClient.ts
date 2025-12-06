@@ -447,14 +447,23 @@ export class AlphaClient {
         };
       } else {
         // Need to split - sends amount, keeps change
-        // Create splitter with burn callback
+        // For splits, we handle the wallet update atomically after the operation
+        // completes, firing a single "token_replaced" callback
+        const originalTokenId = tokenEntry.token.id;
+
+        // Create splitter with a callback that only removes the token from wallet
+        // (no notification yet - we'll fire a combined one after adding change)
         const splitter = new TokenSplitter(
           this.client,
           trustBase,
-          createOnBurnedCallback(
-            tokenEntry.token.id,
-            `Burned token for split: sending ${amount} of coin ${coinId.slice(0, 8)}...`,
-          ),
+          async (burnedTokenId: string) => {
+            if (burnedTokenId !== originalTokenId) {
+              throw new Error(
+                `Unexpected token burned: expected ${originalTokenId}, got ${burnedTokenId}`,
+              );
+            }
+            wallet.removeToken(originalTokenId);
+          },
         );
 
         const splitResult = await splitter.split(
@@ -475,11 +484,11 @@ export class AlphaClient {
           tokenEntry.label ? `${tokenEntry.label} (change)` : undefined,
         );
 
-        // Notify about the change token being added
+        // Notify about the split operation (original replaced with change)
         await this.notifyStateChange(wallet, {
-          type: "token_added",
-          tokenIds: [splitResult.changeToken.id],
-          description: `Split complete: change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
+          type: "token_replaced",
+          tokenIds: [originalTokenId, splitResult.changeToken.id],
+          description: `Split: sent ${amount}, change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
         });
 
         return {
@@ -536,14 +545,21 @@ export class AlphaClient {
     // Handle the last token
     if (selection.requiresSplit) {
       // Split the last token for the remaining amount
-      // Create splitter with burn callback
+      // For splits, we handle the wallet update atomically after the operation
+      // completes, firing a single "token_replaced" callback
+      const lastTokenId = lastToken.token.id;
+
       const splitter = new TokenSplitter(
         this.client,
         trustBase,
-        createOnBurnedCallback(
-          lastToken.token.id,
-          `Burned last token for split: sending ${selection.splitAmount} of coin ${coinId.slice(0, 8)}...`,
-        ),
+        async (burnedTokenId: string) => {
+          if (burnedTokenId !== lastTokenId) {
+            throw new Error(
+              `Unexpected token burned: expected ${lastTokenId}, got ${burnedTokenId}`,
+            );
+          }
+          wallet.removeToken(lastTokenId);
+        },
       );
 
       const splitResult = await splitter.split(
@@ -567,11 +583,11 @@ export class AlphaClient {
         lastToken.label ? `${lastToken.label} (change)` : undefined,
       );
 
-      // Notify about the change token being added
+      // Notify about the split operation (original replaced with change)
       await this.notifyStateChange(wallet, {
-        type: "token_added",
-        tokenIds: [splitResult.changeToken.id],
-        description: `Split complete: change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
+        type: "token_replaced",
+        tokenIds: [lastTokenId, splitResult.changeToken.id],
+        description: `Split: sent ${selection.splitAmount}, change ${splitResult.changeToken.getCoinBalance(coinId)} of coin ${coinId.slice(0, 8)}...`,
       });
     } else {
       // Full transfer of last token
