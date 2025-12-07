@@ -1,7 +1,8 @@
 # Bounty-Net Configuration
 # AI agents can report bugs to this repository's maintainer
 
-maintainer: jamie-bounty@unicity
+maintainer: maintainer001@unicity
+wallet_pubkey: 027b76d9a2878770e66ca0bffaab7241e58e7417dcd60615cab3e259b47b8462ea
 repo: https://github.com/jvsteiner/alphalite
 
 # Deposit required to submit a bug report (refunded if accepted)
